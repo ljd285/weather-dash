@@ -34,18 +34,40 @@ if not API_KEY:
 
 HEADERS = {"api_key": API_KEY, "Accept": "application/json"}
 
+# Paleta Material Design (tonos 500, salvo donde se indica)
+MATERIAL = {
+    "rojo": "#F44336",
+    "azul": "#2196F3",
+    "azul_claro": "#03A9F4",
+    "indigo": "#3F51B5",
+    "morado": "#673AB7",
+    "teal": "#009688",
+    "verde": "#4CAF50",
+    "gris": "#607D8B",
+    "fondo": "#FAFAFA",
+    "texto": "#212121",
+}
 
-def aemet_get(endpoint, retries=3):
+
+def aemet_get(endpoint, retries=5):
     """Llama a un endpoint de AEMET.
 
     AEMET responde primero con un JSON pequeño que contiene la URL real de
     los datos (campo 'datos'), así que hace falta una segunda petición para
     obtener el contenido de verdad.
+
+    AEMET limita las peticiones por minuto con la misma clave (HTTP 429).
+    Si se supera el límite, se espera cada vez más tiempo antes de
+    reintentar (10s, 20s, 40s, 60s...), porque el límite tarda hasta un
+    minuto en liberarse.
     """
+    espera = 10
     for intento in range(retries):
         resp = requests.get(f"{BASE_URL}{endpoint}", headers=HEADERS, timeout=30)
         if resp.status_code == 429:
-            time.sleep(3)
+            print(f"Límite de peticiones de AEMET alcanzado, esperando {espera}s (intento {intento + 1}/{retries})...")
+            time.sleep(espera)
+            espera = min(espera * 2, 60)
             continue
         resp.raise_for_status()
         meta = resp.json()
@@ -73,10 +95,17 @@ def resolver_idema(busqueda_nombre):
 def obtener_historico(idema, dias):
     """Descarga los valores climatológicos diarios de los últimos `dias` días.
 
-    AEMET limita cada petición a un máximo de ~1 año, así que se trocea el
-    rango si hiciera falta (por defecto no hace falta, con 90 días).
+    Los valores diarios de AEMET pasan por un proceso de validación antes de
+    publicarse (AEMET indica un retardo oficial de unos 4 días), así que una
+    petición cuyo rango llegue hasta "hoy" puede fallar. Por eso se aplica un
+    margen de seguridad (MARGEN_DIAS) y el rango termina unos días antes de hoy.
+
+    AEMET limita además cada petición a un máximo de ~1 año, así que se
+    trocea el rango si hiciera falta (por defecto no hace falta, con 90
+    días).
     """
-    fecha_fin = datetime.utcnow()
+    MARGEN_DIAS = 5
+    fecha_fin = datetime.utcnow() - timedelta(days=MARGEN_DIAS)
     fecha_ini = fecha_fin - timedelta(days=dias)
     registros = []
     cursor = fecha_ini
@@ -85,7 +114,7 @@ def obtener_historico(idema, dias):
         ini_str = cursor.strftime("%Y-%m-%dT00:00:00UTC")
         fin_str = siguiente.strftime("%Y-%m-%dT23:59:59UTC")
         endpoint = (
-            f"/valores/climatologicos/diariosclimatologicos/"
+            f"/valores/climatologicos/diarios/datos/"
             f"fechaini/{ini_str}/fechafin/{fin_str}/estacion/{idema}"
         )
         try:
@@ -103,76 +132,250 @@ def obtener_prediccion(municipio):
 
 
 def historico_a_dataframe(registros):
+    """Convierte los registros diarios de AEMET en un DataFrame limpio.
+
+    Campos usados (ver metadatos de AEMET): tmax/tmin (°C), prec (mm),
+    velmedia/racha (m/s -> se convierten a km/h), hrmedia/hrmax/hrmin (%).
+    """
     df = pd.DataFrame(registros)
     if df.empty:
         return df
+    df.columns = [c.lower() for c in df.columns]
     df["fecha"] = pd.to_datetime(df["fecha"])
-    for col in ["tmax", "tmin", "prec"]:
+
+    columnas_numericas = ["tmax", "tmin", "tmed", "prec", "velmedia", "racha", "hrmedia", "hrmax", "hrmin"]
+    for col in columnas_numericas:
         if col in df.columns:
-            # AEMET usa coma decimal y "Ip" para precipitación inapreciable
-            df[col] = df[col].astype(str).str.replace(",", ".", regex=False)
-            df[col] = df[col].str.replace("Ip", "0", regex=False)
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            serie = df[col].astype(str).str.replace(",", ".", regex=False)
+            if col == "prec":
+                # "Ip" = precipitación inapreciable (< 0,1 mm)
+                serie = serie.str.replace("Ip", "0", regex=False)
+            df[col] = pd.to_numeric(serie, errors="coerce")
+
+    # AEMET da la velocidad del viento en m/s; se pasa a km/h para que
+    # coincida con las unidades de la predicción y con lo habitual en AEMET.
+    for col in ["velmedia", "racha"]:
+        if col in df.columns:
+            df[col] = df[col] * 3.6
+
     return df.sort_values("fecha")
 
 
+def _max_valor(lista, campo):
+    """Extrae el valor numérico máximo de una lista de dicts de AEMET
+    (p. ej. 'viento' o 'rachaMax' dentro de la predicción diaria)."""
+    valores = []
+    for item in lista or []:
+        v = item.get(campo)
+        if v is None or v == "":
+            continue
+        try:
+            valores.append(float(str(v).replace(",", ".")))
+        except (TypeError, ValueError):
+            continue
+    return max(valores) if valores else None
+
+
 def prediccion_a_dataframe(prediccion):
+    """Convierte la predicción diaria (7 días) de AEMET en un DataFrame.
+
+    Por cada día se extrae: temperatura máx/mín, probabilidad de
+    precipitación, viento (velocidad y racha máximas del día) y humedad
+    relativa máx/mín.
+    """
     filas = []
     for dia in prediccion.get("prediccion", {}).get("dia", []):
         fecha = dia["fecha"][:10]
         tmax = dia.get("temperatura", {}).get("maxima")
         tmin = dia.get("temperatura", {}).get("minima")
+
         probs = dia.get("probPrecipitacion", []) or []
-        valores = [p.get("value") for p in probs if p.get("value") is not None]
-        prob_precip = max(valores) if valores else None
-        filas.append({"fecha": fecha, "tmax": tmax, "tmin": tmin, "prob_precip": prob_precip})
+        valores_precip = [p.get("value") for p in probs if p.get("value") is not None]
+        prob_precip = max(valores_precip) if valores_precip else None
+
+        humedad = dia.get("humedadRelativa", {}) or {}
+
+        filas.append({
+            "fecha": fecha,
+            "tmax": tmax,
+            "tmin": tmin,
+            "prob_precip": prob_precip,
+            "hum_max": humedad.get("maxima"),
+            "hum_min": humedad.get("minima"),
+            "viento_max": _max_valor(dia.get("viento"), "velocidad"),
+            "racha_max": _max_valor(dia.get("rachaMax"), "value"),
+        })
+
     df = pd.DataFrame(filas)
     if not df.empty:
         df["fecha"] = pd.to_datetime(df["fecha"])
+        for col in ["tmax", "tmin", "prob_precip", "hum_max", "hum_min"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
 
-def construir_figura(nombre, df_hist, df_pred):
+def _texto_barras(serie, sufijo):
+    """Etiquetas de texto para barras, en el mismo orden que la serie."""
+    return [f"{v:.0f}{sufijo}" if pd.notna(v) else "" for v in serie]
+
+
+def construir_graficos_historico(df):
+    """Devuelve una lista de fragmentos HTML, uno por variable (temperatura,
+    precipitación, viento, humedad), cada uno pensado para ocupar el ancho
+    completo de la página (en vez de un único gráfico con 4 paneles)."""
+    if df.empty:
+        return ['<p class="aviso">No se pudieron cargar datos históricos en esta ejecución.</p>']
+
+    graficos = []
+    config = {"responsive": True}
+    layout_comun = dict(template="plotly_white", height=320, margin=dict(t=50, b=40, l=50, r=20))
+
+    # Temperatura
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["fecha"], y=df["tmax"], name="Máxima", line=dict(color=MATERIAL["rojo"], width=2)))
+    fig.add_trace(go.Scatter(x=df["fecha"], y=df["tmin"], name="Mínima", line=dict(color=MATERIAL["azul"], width=2)))
+    fig.update_yaxes(range=[5, 45], title="°C")
+    fig.update_layout(title="Temperatura", legend=dict(orientation="h", y=-0.25), **layout_comun)
+    graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
+
+    # Precipitación
+    if "prec" in df.columns:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=df["fecha"], y=df["prec"], name="Precipitación", marker_color=MATERIAL["azul_claro"]))
+        fig.update_yaxes(range=[0, 50], title="mm")
+        fig.update_layout(title="Precipitación", showlegend=False, **layout_comun)
+        graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
+
+    # Viento
+    fig = go.Figure()
+    if "velmedia" in df.columns:
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["velmedia"], name="Vel. media", line=dict(color=MATERIAL["indigo"], width=2)))
+    if "racha" in df.columns:
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha"], name="Racha máx.", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")))
+    fig.update_yaxes(range=[0, 80], title="km/h")
+    fig.update_layout(title="Viento", legend=dict(orientation="h", y=-0.25), **layout_comun)
+    graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
+
+    # Humedad
+    fig = go.Figure()
+    if "hrmax" in df.columns:
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["hrmax"], name="Humedad máx.", line=dict(color=MATERIAL["teal"], width=2)))
+    if "hrmin" in df.columns:
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["hrmin"], name="Humedad mín.", line=dict(color=MATERIAL["verde"], width=2)))
+    fig.update_yaxes(range=[0, 100], title="%")
+    fig.update_layout(title="Humedad relativa", legend=dict(orientation="h", y=-0.25), **layout_comun)
+    graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
+
+    return graficos
+
+
+def construir_figura_prediccion(df):
+    """Gráfico de predicción (2x2): temperatura y humedad como barras
+    superpuestas (mínima delante/encima de máxima, con el valor dentro de
+    la barra), viento como líneas, y una línea vertical separando cada día
+    en los cuatro paneles."""
     fig = make_subplots(
-        rows=2,
-        cols=1,
-        row_heights=[0.65, 0.35],
-        subplot_titles=(f"{nombre} — temperatura (histórico y predicción)", "Precipitación"),
-        vertical_spacing=0.12,
+        rows=2, cols=2,
+        subplot_titles=("Temperatura prevista (°C)", "Prob. precipitación (%)", "Viento previsto (km/h)", "Humedad prevista (%)"),
+        vertical_spacing=0.22, horizontal_spacing=0.08,
     )
+    if df.empty:
+        fig.update_layout(height=700, template="plotly_white")
+        return fig
 
-    if not df_hist.empty:
-        fig.add_trace(
-            go.Scatter(x=df_hist["fecha"], y=df_hist["tmax"], name="Máx. histórica", line=dict(color="#e4572e")),
-            row=1, col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=df_hist["fecha"], y=df_hist["tmin"], name="Mín. histórica", line=dict(color="#17bebb")),
-            row=1, col=1,
-        )
-        if "prec" in df_hist.columns:
-            fig.add_trace(
-                go.Bar(x=df_hist["fecha"], y=df_hist["prec"], name="Precipitación histórica (mm)", marker_color="#2e86ab"),
-                row=2, col=1,
-            )
+    # Temperatura: la máxima se dibuja primero (detrás, texto fuera para que
+    # no quede tapado) y la mínima después (delante/encima, texto dentro).
+    fig.add_trace(go.Bar(
+        x=df["fecha"], y=df["tmax"], name="Máxima prevista", marker_color=MATERIAL["rojo"],
+        text=_texto_barras(df["tmax"], "°"), textposition="outside",
+    ), row=1, col=1)
+    fig.add_trace(go.Bar(
+        x=df["fecha"], y=df["tmin"], name="Mínima prevista", marker_color=MATERIAL["azul"],
+        text=_texto_barras(df["tmin"], "°"), textposition="inside",
+    ), row=1, col=1)
+    fig.update_yaxes(range=[5, 45], row=1, col=1)
 
-    if not df_pred.empty:
-        fig.add_trace(
-            go.Scatter(x=df_pred["fecha"], y=df_pred["tmax"], name="Máx. prevista", line=dict(color="#e4572e", dash="dot")),
-            row=1, col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=df_pred["fecha"], y=df_pred["tmin"], name="Mín. prevista", line=dict(color="#17bebb", dash="dot")),
-            row=1, col=1,
-        )
-        if "prob_precip" in df_pred.columns:
-            fig.add_trace(
-                go.Bar(x=df_pred["fecha"], y=df_pred["prob_precip"], name="Prob. precipitación prevista (%)", marker_color="#a4d4ae"),
-                row=2, col=1,
-            )
+    if "prob_precip" in df.columns:
+        fig.add_trace(go.Bar(x=df["fecha"], y=df["prob_precip"], name="Prob. precipitación", marker_color=MATERIAL["azul_claro"], showlegend=False), row=1, col=2)
+    fig.update_yaxes(range=[0, 100], row=1, col=2)
 
-    fig.update_layout(height=650, template="plotly_white", legend=dict(orientation="h", y=-0.18))
+    if "viento_max" in df.columns:
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento_max"], name="Viento previsto", mode="lines+markers", line=dict(color=MATERIAL["indigo"], width=2)), row=2, col=1)
+    if "racha_max" in df.columns:
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha_max"], name="Racha prevista", mode="lines+markers", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")), row=2, col=1)
+    fig.update_yaxes(range=[0, 50], row=2, col=1)
+
+    # Humedad: igual que temperatura, mínima delante/encima de máxima.
+    fig.add_trace(go.Bar(
+        x=df["fecha"], y=df["hum_max"], name="Humedad máx. prevista", marker_color=MATERIAL["teal"],
+        text=_texto_barras(df["hum_max"], "%"), textposition="outside",
+    ), row=2, col=2)
+    fig.add_trace(go.Bar(
+        x=df["fecha"], y=df["hum_min"], name="Humedad mín. prevista", marker_color=MATERIAL["verde"],
+        text=_texto_barras(df["hum_min"], "%"), textposition="inside",
+    ), row=2, col=2)
+    fig.update_yaxes(range=[0, 100], row=2, col=2)
+
+    # Una línea vertical por cada día, en los cuatro paneles.
+    for fecha in df["fecha"]:
+        for fila, columna in [(1, 1), (1, 2), (2, 1), (2, 2)]:
+            fig.add_vline(x=fecha, line_width=1, line_dash="dot", line_color=MATERIAL["gris"], opacity=0.3, row=fila, col=columna)
+
+    fig.update_layout(
+        height=700, template="plotly_white", barmode="overlay",
+        legend=dict(orientation="h", y=-0.1), margin=dict(t=60, b=40),
+    )
     return fig
+
+
+#: (etiqueta, color, columna para el valor máximo, columna para el valor
+#: mínimo, unidad). Cuando max y min vienen de la misma columna (p. ej.
+#: precipitación) se repite la columna en ambos huecos.
+VARIABLES_EXTREMOS_HISTORICO = [
+    ("Temperatura", MATERIAL["rojo"], "tmax", "tmin", "°C"),
+    ("Viento", MATERIAL["indigo"], "racha", "velmedia", "km/h"),
+    ("Humedad", MATERIAL["teal"], "hrmax", "hrmin", "%"),
+    ("Precipitación", MATERIAL["azul_claro"], "prec", "prec", "mm"),
+]
+
+VARIABLES_EXTREMOS_PREDICCION = [
+    ("Temperatura prevista", MATERIAL["rojo"], "tmax", "tmin", "°C"),
+    ("Viento previsto", MATERIAL["indigo"], "racha_max", "viento_max", "km/h"),
+    ("Prob. precipitación prevista", MATERIAL["azul_claro"], "prob_precip", "prob_precip", "%"),
+    ("Humedad prevista", MATERIAL["teal"], "hum_max", "hum_min", "%"),
+]
+
+
+def _extremo(df, col, modo):
+    if col not in df.columns or df[col].dropna().empty:
+        return None
+    idx = df[col].idxmax() if modo == "max" else df[col].idxmin()
+    valor = df.loc[idx, col]
+    fecha = df.loc[idx, "fecha"].strftime("%d/%m/%Y")
+    return valor, fecha
+
+
+def construir_recuadro_extremos(df, variables):
+    """Tarjetas con el valor más alto y más bajo de cada variable de
+    `variables` (ver VARIABLES_EXTREMOS_HISTORICO / _PREDICCION más arriba)."""
+    if df.empty:
+        return ""
+
+    tarjetas = []
+    for etiqueta, color, col_max, col_min, unidad in variables:
+        alto = _extremo(df, col_max, "max")
+        bajo = _extremo(df, col_min, "min")
+        alto_html = f"{alto[0]:.1f} {unidad} <span class='fecha'>({alto[1]})</span>" if alto else "sin datos"
+        bajo_html = f"{bajo[0]:.1f} {unidad} <span class='fecha'>({bajo[1]})</span>" if bajo else "sin datos"
+        tarjetas.append(
+            f'<div class="tarjeta" style="border-top-color:{color};">'
+            f"<h3>{etiqueta}</h3>"
+            f"<p>▲ Máx: {alto_html}</p>"
+            f"<p>▼ Mín: {bajo_html}</p>"
+            f"</div>"
+        )
+    return f'<div class="tarjetas">{"".join(tarjetas)}</div>'
 
 
 def main():
@@ -183,38 +386,193 @@ def main():
     for estacion in STATIONS:
         idema = estacion.get("idema")
         nombre = estacion["nombre"]
+        df_hist, df_pred = pd.DataFrame(), pd.DataFrame()
+
+        # El histórico y la predicción se piden por separado: si uno de los
+        # dos falla (p. ej. por el límite de peticiones de AEMET), el otro
+        # se sigue mostrando en vez de perder todo el bloque de la estación.
         try:
             if not idema:
                 idema, nombre_real = resolver_idema(estacion["busqueda_nombre"])
                 nombre = estacion.get("nombre") or nombre_real
-            print(f"Procesando {nombre} (idema={idema})...")
+            print(f"Procesando histórico de {nombre} (idema={idema})...")
             historico = obtener_historico(idema, DIAS_HISTORICO)
-            prediccion = obtener_prediccion(estacion["municipio"])
             df_hist = historico_a_dataframe(historico)
-            df_pred = prediccion_a_dataframe(prediccion)
-            fig = construir_figura(nombre, df_hist, df_pred)
-            bloques_html.append(fig.to_html(full_html=False, include_plotlyjs=False))
         except Exception as exc:
-            print(f"Error procesando {nombre}: {exc}")
-            bloques_html.append(f"<p>No se pudieron cargar los datos de {nombre}: {exc}</p>")
+            print(f"Aviso: no se pudo obtener el histórico de {nombre}: {exc}")
+
+        time.sleep(2)  # pequeña pausa para no encadenar peticiones demasiado rápido
+
+        try:
+            print(f"Procesando predicción de {nombre}...")
+            prediccion = obtener_prediccion(estacion["municipio"])
+            df_pred = prediccion_a_dataframe(prediccion)
+        except Exception as exc:
+            print(f"Aviso: no se pudo obtener la predicción de {nombre}: {exc}")
+
+        seccion = [f'<section class="estacion"><h2>{nombre}</h2>']
+
+        # Extremos previstos arriba (donde antes estaban los históricos);
+        # pronóstico primero (con fondo propio), histórico después con sus
+        # propios extremos históricos.
+        seccion.append(construir_recuadro_extremos(df_pred, VARIABLES_EXTREMOS_PREDICCION))
+
+        seccion.append('<div class="bloque-pronostico">')
+        seccion.append('<h3 class="subtitulo">Pronóstico (7 días)</h3>')
+        if df_pred.empty:
+            seccion.append('<p class="aviso">No se pudo cargar la predicción en esta ejecución.</p>')
+        else:
+            seccion.append(construir_figura_prediccion(df_pred).to_html(full_html=False, include_plotlyjs=False))
+        seccion.append('</div>')
+
+        seccion.append('<h3 class="subtitulo">Histórico</h3>')
+        seccion.append(construir_recuadro_extremos(df_hist, VARIABLES_EXTREMOS_HISTORICO))
+        seccion.append('<div class="graficos-apilados">')
+        seccion.extend(construir_graficos_historico(df_hist))
+        seccion.append('</div>')
+
+        seccion.append("</section>")
+        bloques_html.append("".join(seccion))
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<script>
+(function() {{
+    try {{
+        var guardado = localStorage.getItem('tema-aemet');
+        var prefiereOscuro = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', guardado || (prefiereOscuro ? 'dark' : 'light'));
+    }} catch (e) {{}}
+}})();
+</script>
 <title>Dashboard AEMET</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
-body {{ font-family: -apple-system, Arial, sans-serif; margin: 2rem auto; max-width: 1000px; background:#fafafa; color:#222; }}
-h1 {{ font-size: 1.5rem; }}
-footer {{ margin-top: 2rem; color: #777; font-size: 0.85rem; }}
+:root {{
+    --md-rojo: {MATERIAL["rojo"]};
+    --md-azul: {MATERIAL["azul"]};
+    --md-azul-claro: {MATERIAL["azul_claro"]};
+    --md-indigo: {MATERIAL["indigo"]};
+    --md-morado: {MATERIAL["morado"]};
+    --md-teal: {MATERIAL["teal"]};
+    --md-verde: {MATERIAL["verde"]};
+    --md-gris: {MATERIAL["gris"]};
+    --fondo: {MATERIAL["fondo"]};
+    --superficie: #FFFFFF;
+    --texto: {MATERIAL["texto"]};
+    --texto-secundario: {MATERIAL["gris"]};
+    --sombra: rgba(0,0,0,0.12);
+    --sombra-suave: rgba(0,0,0,0.08);
+    --borde: rgba(0,0,0,0.08);
+    --fondo-pronostico: #E8EAF6;
+}}
+:root[data-theme="dark"] {{
+    --fondo: #121212;
+    --superficie: #1E1E1E;
+    --texto: #ECECEC;
+    --texto-secundario: #A0A0A0;
+    --sombra: rgba(0,0,0,0.6);
+    --sombra-suave: rgba(0,0,0,0.4);
+    --borde: rgba(255,255,255,0.1);
+    --fondo-pronostico: #232B45;
+}}
+body {{
+    font-family: "Roboto", -apple-system, Arial, sans-serif;
+    margin: 0; padding: 2rem;
+    background: var(--fondo);
+    color: var(--texto);
+}}
+.contenedor {{ max-width: 1100px; margin: 0 auto; }}
+.cabecera {{ display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }}
+h1 {{ font-size: 1.6rem; font-weight: 500; margin: 0; }}
+.boton-tema {{
+    background: var(--superficie); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 50%; width: 44px; height: 44px; font-size: 1.3rem; line-height: 1;
+    cursor: pointer; box-shadow: 0 1px 3px var(--sombra); flex-shrink: 0;
+}}
+h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-bottom: 2px solid var(--md-indigo); padding-bottom: 0.3rem; }}
+.subtitulo {{ font-size: 1.05rem; font-weight: 500; color: var(--texto-secundario); margin-top: 1.5rem; }}
+.estacion {{ background: var(--superficie); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }}
+.tarjetas {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 1.5rem; }}
+.tarjeta {{ flex: 1 1 200px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 0.8rem 1rem; box-shadow: 0 1px 3px var(--sombra); }}
+.tarjeta h3 {{ margin: 0 0 0.4rem; font-size: 0.95rem; font-weight: 500; }}
+.tarjeta p {{ margin: 0.2rem 0; font-size: 0.9rem; }}
+.tarjeta .fecha {{ color: var(--texto-secundario); font-size: 0.8rem; }}
+.aviso {{ color: var(--texto-secundario); font-style: italic; }}
+.bloque-pronostico {{ background: var(--fondo-pronostico); border-radius: 8px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }}
+.bloque-pronostico .subtitulo {{ margin-top: 0; }}
+.graficos-apilados {{ display: flex; flex-direction: column; gap: 0.5rem; }}
+.graficos-apilados > div, .graficos-apilados .plotly-graph-div {{ width: 100% !important; }}
+footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; text-align: center; }}
 </style>
 </head>
 <body>
+<div class="contenedor">
+<div class="cabecera">
 <h1>Dashboard climatológico — AEMET OpenData</h1>
+<button id="toggle-tema" class="boton-tema" aria-label="Cambiar de tema">🌙</button>
+</div>
 <p>Datos históricos ({DIAS_HISTORICO} días) y predicción a 7 días.</p>
 {''.join(bloques_html)}
 <footer>Generado automáticamente el {generado}. Fuente: AEMET OpenData.</footer>
+</div>
+<script>
+(function() {{
+    var raiz = document.documentElement;
+    var boton = document.getElementById('toggle-tema');
+
+    function coloresGrafico(tema) {{
+        var esOscuro = tema === 'dark';
+        return {{
+            fondo: esOscuro ? '#1E1E1E' : '#FFFFFF',
+            texto: esOscuro ? '#ECECEC' : '#212121',
+            rejilla: esOscuro ? '#333333' : '#E5E5E5',
+        }};
+    }}
+
+    function actualizarGraficos(tema) {{
+        var c = coloresGrafico(tema);
+        document.querySelectorAll('.plotly-graph-div').forEach(function(div) {{
+            if (!div.layout) return;
+            var actualizacion = {{ paper_bgcolor: c.fondo, plot_bgcolor: c.fondo, 'font.color': c.texto }};
+            Object.keys(div.layout).forEach(function(clave) {{
+                if (/^(xaxis|yaxis)\\d*$/.test(clave)) {{
+                    actualizacion[clave + '.gridcolor'] = c.rejilla;
+                    actualizacion[clave + '.linecolor'] = c.rejilla;
+                    actualizacion[clave + '.zerolinecolor'] = c.rejilla;
+                }}
+            }});
+            if (div.layout.annotations && div.layout.annotations.length) {{
+                actualizacion.annotations = div.layout.annotations.map(function(a) {{
+                    var copia = Object.assign({{}}, a);
+                    copia.font = Object.assign({{}}, a.font, {{ color: c.texto }});
+                    return copia;
+                }});
+            }}
+            Plotly.relayout(div, actualizacion);
+        }});
+    }}
+
+    function actualizarBoton(tema) {{
+        boton.textContent = tema === 'dark' ? '☀️' : '🌙';
+        boton.setAttribute('aria-label', tema === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
+    }}
+
+    var temaActual = raiz.getAttribute('data-theme') || 'light';
+    actualizarBoton(temaActual);
+    actualizarGraficos(temaActual);
+
+    boton.addEventListener('click', function() {{
+        var nuevo = raiz.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        raiz.setAttribute('data-theme', nuevo);
+        try {{ localStorage.setItem('tema-aemet', nuevo); }} catch (e) {{}}
+        actualizarBoton(nuevo);
+        actualizarGraficos(nuevo);
+    }});
+}})();
+</script>
 </body>
 </html>"""
 
