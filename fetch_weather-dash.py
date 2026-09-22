@@ -496,7 +496,7 @@ def main():
     generado = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
     for estacion in STATIONS:
-                idema = estacion.get("idema")
+        idema = estacion.get("idema")
         nombre = estacion["nombre"]
         df_hist, df_pred = pd.DataFrame(), pd.DataFrame()
         lectura_actual = None
