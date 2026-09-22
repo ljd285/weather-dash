@@ -583,7 +583,7 @@ def main():
         seccion.append("</section>")
         bloques_html.append("".join(seccion))
 
-        selector_html = ""
+    selector_html = ""
     if len(estaciones_menu) > 1:
         opciones = "".join(f'<option value="{slug}">{nombre}</option>' for slug, nombre, _, _ in estaciones_menu)
         selector_html = f'<select id="selector-estacion" class="selector-estacion" aria-label="Elegir estación">{opciones}</select>'
@@ -788,7 +788,8 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
         mostrarEstacion(selector.value);
     }});
 }})();
-(function() {
+
+(function() {{
     var contenedor = document.getElementById('mapa-estaciones');
     if (!contenedor || !window.L) return;
 
@@ -796,33 +797,33 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
     if (!estaciones.length) return;
 
     var mapa = L.map('mapa-estaciones');
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {{
+    L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
-    }).addTo(mapa);
+    }}).addTo(mapa);
 
     var grupo = L.featureGroup();
-    estaciones.forEach(function(est) {
+    estaciones.forEach(function(est) {{
         var marcador = L.marker([est.lat, est.lon]).bindPopup(est.nombre);
-        marcador.on('click', function() {
+        marcador.on('click', function() {{
             var selector = document.getElementById('selector-estacion');
             if (!selector) return;
-            var tieneOpcion = Array.prototype.some.call(selector.options, function(o) { return o.value === est.slug; });
-            if (tieneOpcion) {
+            var tieneOpcion = Array.prototype.some.call(selector.options, function(o) {{ return o.value === est.slug; }});
+            if (tieneOpcion) {{
                 selector.value = est.slug;
                 selector.dispatchEvent(new Event('change'));
-            }
-        });
+            }}
+        }});
         marcador.addTo(grupo);
-    });
+    }});
     grupo.addTo(mapa);
 
-    if (estaciones.length === 1) {
+    if (estaciones.length === 1) {{
         mapa.setView([estaciones[0].lat, estaciones[0].lon], 13);
-    } else {
-        mapa.fitBounds(grupo.getBounds(), { padding: [30, 30] });
-    }
-})();
+    }} else {{
+        mapa.fitBounds(grupo.getBounds(), {{ padding: [30, 30] }});
+    }}
+}})();
 </script>
 </body>
 </html>"""
