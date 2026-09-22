@@ -17,15 +17,15 @@ STATIONS = [
         "nombre": "Valencia",
         "idema": None,              # se detecta automáticamente
         "busqueda_nombre": "VALENCIA",
-        "municipio": "46250",       # código INE de Valencia capital
+        "municipio": "8416",       # código INE de Valencia capital
     },
     # Ejemplo de cómo añadir otra estación en el futuro:
-    # {
-    #     "nombre": "Madrid",
-    #     "idema": None,
-    #     "busqueda_nombre": "MADRID, RETIRO",
-    #     "municipio": "28079",
-    # },
+     {
+         "nombre": "Madrid",
+         "idema": None,
+         "busqueda_nombre": "Valencia Aeropuerto",
+         "municipio": "8414A",
+     },
 ]
 
 # Días de histórico climatológico a mostrar en el dashboard
