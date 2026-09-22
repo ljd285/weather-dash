@@ -28,7 +28,7 @@ STATIONS = [
                                       # (ver aemet.es/es/serviciosclimaticos/datosclimatologicos/valoresclimatologicos?l=8416).
                                       # OJO: "8416X" (Valencia, UPV) es una estación distinta
                                       # sin histórico climatológico diario completo.
-        "idema_tiempo_real": "8416Y",  # estación automática para la observación en tiempo real
+        "idema_tiempo_real": "8416X",  # estación automática (Valencia, UPV) para la observación en tiempo real
         "busqueda_nombre": "VALENCIA",  # ya no se usa mientras 'idema' esté fijado arriba
         "municipio": "46250",       # código INE de Valencia capital
     },
