@@ -357,6 +357,34 @@ def _extremo(df, col, modo):
 
 
 def construir_recuadro_extremos(df, variables):
+#: (etiqueta, color, columna para el valor máximo, columna para el valor
+#: mínimo, unidad). Cuando max y min vienen de la misma columna (p. ej.
+#: precipitación) se repite la columna en ambos huecos.
+VARIABLES_EXTREMOS_HISTORICO = [
+    ("Temperatura", MATERIAL["rojo"], "tmax", "tmin", "°C"),
+    ("Viento", MATERIAL["indigo"], "racha", "velmedia", "km/h"),
+    ("Humedad", MATERIAL["teal"], "hrmax", "hrmin", "%"),
+    ("Precipitación", MATERIAL["azul_claro"], "prec", "prec", "mm"),
+]
+
+VARIABLES_EXTREMOS_PREDICCION = [
+    ("Temperatura prevista", MATERIAL["rojo"], "tmax", "tmin", "°C"),
+    ("Viento previsto", MATERIAL["indigo"], "racha_max", "viento_max", "km/h"),
+    ("Prob. precipitación prevista", MATERIAL["azul_claro"], "prob_precip", "prob_precip", "%"),
+    ("Humedad prevista", MATERIAL["teal"], "hum_max", "hum_min", "%"),
+]
+
+
+def _extremo(df, col, modo):
+    if col not in df.columns or df[col].dropna().empty:
+        return None
+    idx = df[col].idxmax() if modo == "max" else df[col].idxmin()
+    valor = df.loc[idx, col]
+    fecha = df.loc[idx, "fecha"].strftime("%d/%m/%Y")
+    return valor, fecha
+
+
+def construir_recuadro_extremos(df, variables):
     """Tarjetas con el valor más alto y más bajo de cada variable de
     `variables` (ver VARIABLES_EXTREMOS_HISTORICO / _PREDICCION más arriba)."""
     if df.empty:
@@ -377,8 +405,24 @@ def construir_recuadro_extremos(df, variables):
         )
     return f'<div class="tarjetas">{"".join(tarjetas)}</div>'
 
+    tarjetas = []
+    for etiqueta, color, col_max, col_min, unidad in variables:
+        alto = _extremo(df, col_max, "max")
+        bajo = _extremo(df, col_min, "min")
+        alto_html = f"{alto[0]:.1f} {unidad} <span class='fecha'>({alto[1]})</span>" if alto else "sin datos"
+        bajo_html = f"{bajo[0]:.1f} {unidad} <span class='fecha'>({bajo[1]})</span>" if bajo else "sin datos"
+        tarjetas.append(
+            f'<div class="tarjeta" style="border-top-color:{color};">'
+            f"<h3>{etiqueta}</h3>"
+            f"<p>▲ Máx: {alto_html}</p>"
+            f"<p>▼ Mín: {bajo_html}</p>"
+            f"</div>"
+        )
+    return f'<div class="tarjetas">{"".join(tarjetas)}</div>'
+
 
 def main():
+    
     os.makedirs("docs", exist_ok=True)
     bloques_html = []
     generado = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
