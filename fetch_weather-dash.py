@@ -407,6 +407,13 @@ def main():
             print(f"Procesando predicción de {nombre}...")
             prediccion = obtener_prediccion(estacion["municipio"])
             df_pred = prediccion_a_dataframe(prediccion)
+            if df_pred.empty:
+                dias_recibidos = prediccion.get("prediccion", {}).get("dia", [])
+                print(
+                    f"Aviso: la predicción de {nombre} se descargó sin errores pero "
+                    f"salió vacía. Claves de nivel superior recibidas: {list(prediccion.keys())}. "
+                    f"Días dentro de 'prediccion': {len(dias_recibidos)}."
+                )
         except Exception as exc:
             print(f"Aviso: no se pudo obtener la predicción de {nombre}: {exc}")
 
