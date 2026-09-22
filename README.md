@@ -1,0 +1,88 @@
+# Dashboard climatológico con AEMET OpenData
+
+Dashboard HTML que muestra, para una estación (por defecto Valencia):
+
+- **Histórico**: temperatura máxima/mínima y precipitación de los últimos 90 días.
+- **Predicción**: temperatura y probabilidad de precipitación a 7 días.
+
+Todo se ejecuta en la nube (GitHub Actions), sin instalar nada en tu ordenador.
+Se puede prototipar antes en Google Colab si quieres ver los datos sin montar aún la automatización.
+
+## 0. Requisito: clave de AEMET OpenData
+
+1. Ve a <https://opendata.aemet.es/centrodedescargas/altaUsuario> y pide una clave (API key) gratuita con tu email.
+2. Te llegará un enlace por correo para activarla. El resultado es un token largo tipo JWT: guárdalo, lo necesitarás en el paso 3.
+
+## 1. Probar los datos en Google Colab (opcional, recomendado la primera vez)
+
+No hace falta instalar nada, solo un navegador:
+
+1. Abre <https://colab.research.google.com> y crea un notebook nuevo.
+2. En la primera celda:
+   ```python
+   !pip install requests pandas plotly -q
+   ```
+3. Sube (o pega el contenido de) `config.py` y `fetch_aemet_dashboard.py` a los archivos del notebook (icono de carpeta a la izquierda → subir), o copia el código de `fetch_aemet_dashboard.py` directamente en celdas.
+4. En otra celda, define tu clave (mejor con un "Secret" de Colab — icono de llave a la izquierda — que como texto plano):
+   ```python
+   import os
+   os.environ["AEMET_API_KEY"] = "tu_clave_aqui"
+   ```
+5. Ejecuta:
+   ```python
+   !python fetch_aemet_dashboard.py
+   ```
+6. Para verlo dentro del propio notebook:
+   ```python
+   from IPython.display import IFrame
+   IFrame("docs/index.html", width=900, height=700)
+   ```
+
+Esto te sirve para comprobar que la clave funciona y que los datos de Valencia se descargan bien, antes de automatizar nada.
+
+## 2. Subir el proyecto a GitHub
+
+1. Crea un repositorio nuevo en GitHub (público o privado, ambos funcionan con GitHub Pages, aunque con un repo privado necesitas GitHub Pro/Team/Enterprise para publicar Pages).
+2. Sube todos los archivos de esta carpeta (`config.py`, `fetch_aemet_dashboard.py`, `requirements.txt`, `README.md` y la carpeta `.github/workflows/`) al repositorio. Puedes hacerlo desde la web de GitHub arrastrando los archivos ("Add file → Upload files"), sin usar la terminal.
+
+## 3. Guardar la clave de AEMET como secreto
+
+1. En el repositorio: **Settings → Secrets and variables → Actions → New repository secret**.
+2. Nombre: `AEMET_API_KEY`. Valor: tu clave de AEMET. Guardar.
+
+(El workflow la usa como variable de entorno; nunca queda escrita en el código ni es visible en los logs.)
+
+## 4. Activar GitHub Pages
+
+1. **Settings → Pages**.
+2. En "Build and deployment" → Source: **Deploy from a branch**.
+3. Branch: `gh-pages` (la crea automáticamente la primera vez que se ejecute el workflow) → carpeta `/ (root)`.
+4. Guarda. Tu dashboard quedará accesible en `https://<tu-usuario>.github.io/<tu-repo>/`.
+
+## 5. Ejecutar el workflow
+
+- Se ejecuta solo, cada día a las 06:00 UTC (lo puedes cambiar editando el `cron` en `.github/workflows/update-dashboard.yml`).
+- Para probarlo ya, sin esperar: pestaña **Actions** del repo → "Actualizar dashboard AEMET" → **Run workflow**.
+- Si falla, la pestaña Actions muestra el log paso a paso (útil para ver si el error viene de la clave, de un límite de peticiones, etc.).
+
+## 6. Extender a más estaciones en el futuro
+
+Edita `config.py` y añade otra entrada a la lista `STATIONS`, por ejemplo:
+
+```python
+STATIONS = [
+    {"nombre": "Valencia", "idema": None, "busqueda_nombre": "VALENCIA", "municipio": "46250"},
+    {"nombre": "Madrid", "idema": None, "busqueda_nombre": "MADRID, RETIRO", "municipio": "28079"},
+]
+```
+
+- `busqueda_nombre` es un texto que debe aparecer en el nombre oficial de la estación climatológica (el script lo busca solo, no hace falta el código IDEMA a mano).
+- `municipio` es el código INE de 5 dígitos que usa AEMET para la predicción por municipios: se ve en la URL de `aemet.es/es/eltiempo/prediccion/municipios/...-id<codigo>` buscando la localidad en <https://www.aemet.es/es/eltiempo/prediccion/municipios>.
+
+El script genera un bloque de gráficos por cada estación de la lista, todos en el mismo `docs/index.html`.
+
+## Notas técnicas
+
+- AEMET limita cada consulta de histórico a un máximo de ~1 año; el script trocea automáticamente el rango si algún día pides más de 90 días.
+- AEMET tiene un límite de peticiones por minuto; si ves errores HTTP 429 el script reintenta automáticamente con una pequeña espera.
+- Los datos climatológicos diarios (histórico) y la predicción por municipios son dos APIs distintas de AEMET; por eso la estación (`idema`) y el municipio (`municipio`) se configuran por separado, aunque sea la misma ciudad.
