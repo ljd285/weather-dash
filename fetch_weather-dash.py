@@ -5,7 +5,7 @@ config.py.
 
 Uso:
     export AEMET_API_KEY="tu_clave"
-    python fetch_aemet_dashboard.py
+    python fetch_weather-dash.py
 
 El resultado se escribe en docs/index.html (esa carpeta es la que se publica
 como GitHub Pages, ver README.md).
