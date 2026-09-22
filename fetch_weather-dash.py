@@ -11,8 +11,9 @@ El resultado se escribe en docs/index.html (esa carpeta es la que se publica
 como GitHub Pages, ver README.md).
 """
 
-import os
 import json
+import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta
@@ -199,6 +200,7 @@ def obtener_prediccion(municipio):
     data = aemet_get(f"/prediccion/especifica/municipio/diaria/{municipio}")
     return data[0]
 
+
 def obtener_observacion_actual(idema_obs):
     """Descarga las lecturas recientes (última jornada) de una estación
     automática de observación y devuelve la más reciente (AEMET las da
@@ -207,6 +209,7 @@ def obtener_observacion_actual(idema_obs):
     if not lecturas:
         return None
     return lecturas[-1]
+
 
 def historico_a_dataframe(registros):
     """Convierte los registros diarios de AEMET en un DataFrame limpio.
@@ -405,6 +408,17 @@ def construir_figura_prediccion(df):
     )
     return fig
 
+
+def _slug(texto):
+    """Convierte un nombre de estación en un identificador simple (sin
+    acentos ni espacios) para usarlo en atributos HTML y en JavaScript."""
+    texto = texto.lower()
+    for original, sin_acento in {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n", "ü": "u"}.items():
+        texto = texto.replace(original, sin_acento)
+    texto = re.sub(r"[^a-z0-9]+", "-", texto).strip("-")
+    return texto or "estacion"
+
+
 def construir_tarjetas_kpi(lectura):
     """Tarjetas destacadas con las condiciones observadas más recientes:
     temperatura, viento, humedad y precipitación de la última hora."""
@@ -440,6 +454,7 @@ def construir_tarjetas_kpi(lectura):
     )
     nota_hora = f'<p class="aviso">Última observación: {hora}</p>' if hora else ""
     return f'<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
+
 
 #: (etiqueta, color, columna para el valor máximo, columna para el valor
 #: mínimo, unidad). Cuando max y min vienen de la misma columna (p. ej.
@@ -493,6 +508,7 @@ def construir_recuadro_extremos(df, variables):
 def main():
     os.makedirs("docs", exist_ok=True)
     bloques_html = []
+    estaciones_menu = []
     generado = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
     for estacion in STATIONS:
@@ -540,7 +556,9 @@ def main():
         except Exception as exc:
             print(f"Aviso: no se pudo obtener la predicción de {nombre}: {exc}")
 
-        seccion = [f'<section class="estacion"><h2>{nombre}</h2>']
+        slug = _slug(nombre)
+        estaciones_menu.append((slug, nombre))
+        seccion = [f'<section class="estacion" data-estacion="{slug}"><h2>{nombre}</h2>']
         seccion.append(construir_tarjetas_kpi(lectura_actual))
 
         # Extremos previstos arriba (donde antes estaban los históricos);
@@ -564,6 +582,11 @@ def main():
 
         seccion.append("</section>")
         bloques_html.append("".join(seccion))
+
+    selector_html = ""
+    if len(estaciones_menu) > 1:
+        opciones = "".join(f'<option value="{slug}">{nombre}</option>' for slug, nombre in estaciones_menu)
+        selector_html = f'<select id="selector-estacion" class="selector-estacion" aria-label="Elegir estación">{opciones}</select>'
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -618,10 +641,16 @@ body {{
 .contenedor {{ max-width: 1100px; margin: 0 auto; }}
 .cabecera {{ display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }}
 h1 {{ font-size: 1.6rem; font-weight: 500; margin: 0; }}
+.controles-cabecera {{ display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }}
 .boton-tema {{
     background: var(--superficie); color: var(--texto); border: 1px solid var(--borde);
     border-radius: 50%; width: 44px; height: 44px; font-size: 1.3rem; line-height: 1;
     cursor: pointer; box-shadow: 0 1px 3px var(--sombra); flex-shrink: 0;
+}}
+.selector-estacion {{
+    background: var(--superficie); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 6px; padding: 0.55rem 0.75rem; font-size: 0.95rem; cursor: pointer;
+    box-shadow: 0 1px 3px var(--sombra);
 }}
 h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-bottom: 2px solid var(--md-indigo); padding-bottom: 0.3rem; }}
 .subtitulo {{ font-size: 1.05rem; font-weight: 500; color: var(--texto-secundario); margin-top: 1.5rem; }}
@@ -647,7 +676,10 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
 <div class="contenedor">
 <div class="cabecera">
 <h1>Dashboard climatológico — AEMET OpenData</h1>
+<div class="controles-cabecera">
+{selector_html}
 <button id="toggle-tema" class="boton-tema" aria-label="Cambiar de tema">🌙</button>
+</div>
 </div>
 <p>Datos históricos ({DIAS_HISTORICO} días) y predicción a 7 días.</p>
 {''.join(bloques_html)}
@@ -705,6 +737,40 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
         try {{ localStorage.setItem('tema-aemet', nuevo); }} catch (e) {{}}
         actualizarBoton(nuevo);
         actualizarGraficos(nuevo);
+    }});
+}})();
+
+(function() {{
+    var selector = document.getElementById('selector-estacion');
+    if (!selector) return;  // solo hay una estación, no hace falta selector
+
+    var secciones = document.querySelectorAll('.estacion');
+
+    function mostrarEstacion(slug) {{
+        secciones.forEach(function(sec) {{
+            var visible = sec.getAttribute('data-estacion') === slug;
+            sec.style.display = visible ? '' : 'none';
+            if (visible) {{
+                sec.querySelectorAll('.plotly-graph-div').forEach(function(div) {{
+                    if (div.layout && window.Plotly) {{
+                        Plotly.Plots.resize(div);
+                    }}
+                }});
+            }}
+        }});
+    }}
+
+    var slugs = Array.prototype.map.call(secciones, function(sec) {{ return sec.getAttribute('data-estacion'); }});
+    var guardada = null;
+    try {{ guardada = localStorage.getItem('estacion-aemet'); }} catch (e) {{}}
+    var inicial = (guardada && slugs.indexOf(guardada) !== -1) ? guardada : slugs[0];
+
+    selector.value = inicial;
+    mostrarEstacion(inicial);
+
+    selector.addEventListener('change', function() {{
+        try {{ localStorage.setItem('estacion-aemet', selector.value); }} catch (e) {{}}
+        mostrarEstacion(selector.value);
     }});
 }})();
 </script>
