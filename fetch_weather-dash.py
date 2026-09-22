@@ -557,7 +557,7 @@ def main():
             print(f"Aviso: no se pudo obtener la predicción de {nombre}: {exc}")
 
         slug = _slug(nombre)
-        estaciones_menu.append((slug, nombre))
+        estaciones_menu.append((slug, nombre, estacion.get("lat"), estacion.get("lon")))
         seccion = [f'<section class="estacion" data-estacion="{slug}"><h2>{nombre}</h2>']
         seccion.append(construir_tarjetas_kpi(lectura_actual))
 
@@ -583,10 +583,21 @@ def main():
         seccion.append("</section>")
         bloques_html.append("".join(seccion))
 
-    selector_html = ""
+        selector_html = ""
     if len(estaciones_menu) > 1:
-        opciones = "".join(f'<option value="{slug}">{nombre}</option>' for slug, nombre in estaciones_menu)
+        opciones = "".join(f'<option value="{slug}">{nombre}</option>' for slug, nombre, _, _ in estaciones_menu)
         selector_html = f'<select id="selector-estacion" class="selector-estacion" aria-label="Elegir estación">{opciones}</select>'
+
+    estaciones_con_coordenadas = [
+        (slug, nombre, lat, lon) for slug, nombre, lat, lon in estaciones_menu if lat is not None and lon is not None
+    ]
+    mapa_html = ""
+    if estaciones_con_coordenadas:
+        mapa_html = '<div id="mapa-estaciones" class="mapa-estaciones"></div>'
+    datos_mapa_js = json.dumps([
+        {"slug": slug, "nombre": nombre, "lat": lat, "lon": lon}
+        for slug, nombre, lat, lon in estaciones_con_coordenadas
+    ], ensure_ascii=False)
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -603,6 +614,8 @@ def main():
 </script>
 <title>Dashboard AEMET</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
 :root {{
     --md-rojo: {MATERIAL["rojo"]};
@@ -667,6 +680,7 @@ h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-botto
 .valor-kpi {{ margin: 0; font-size: 1.7rem; font-weight: 700; }}
 .bloque-pronostico {{ background: var(--fondo-pronostico); border-radius: 8px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }}
 .bloque-pronostico .subtitulo {{ margin-top: 0; }}
+.mapa-estaciones {{ height: 320px; border-radius: 8px; margin: 1rem 0 1.5rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }}
 .graficos-apilados {{ display: flex; flex-direction: column; gap: 0.5rem; }}
 .graficos-apilados > div, .graficos-apilados .plotly-graph-div {{ width: 100% !important; }}
 footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; text-align: center; }}
@@ -682,6 +696,7 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
 </div>
 </div>
 <p>Datos históricos ({DIAS_HISTORICO} días) y predicción a 7 días.</p>
+{mapa_html}
 {''.join(bloques_html)}
 <footer>Generado automáticamente el {generado}. Fuente: AEMET OpenData.</footer>
 </div>
@@ -773,6 +788,41 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
         mostrarEstacion(selector.value);
     }});
 }})();
+(function() {
+    var contenedor = document.getElementById('mapa-estaciones');
+    if (!contenedor || !window.L) return;
+
+    var estaciones = {datos_mapa_js};
+    if (!estaciones.length) return;
+
+    var mapa = L.map('mapa-estaciones');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {{
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+    }).addTo(mapa);
+
+    var grupo = L.featureGroup();
+    estaciones.forEach(function(est) {
+        var marcador = L.marker([est.lat, est.lon]).bindPopup(est.nombre);
+        marcador.on('click', function() {
+            var selector = document.getElementById('selector-estacion');
+            if (!selector) return;
+            var tieneOpcion = Array.prototype.some.call(selector.options, function(o) { return o.value === est.slug; });
+            if (tieneOpcion) {
+                selector.value = est.slug;
+                selector.dispatchEvent(new Event('change'));
+            }
+        });
+        marcador.addTo(grupo);
+    });
+    grupo.addTo(mapa);
+
+    if (estaciones.length === 1) {
+        mapa.setView([estaciones[0].lat, estaciones[0].lon], 13);
+    } else {
+        mapa.fitBounds(grupo.getBounds(), { padding: [30, 30] });
+    }
+})();
 </script>
 </body>
 </html>"""
