@@ -12,6 +12,7 @@ como GitHub Pages, ver README.md).
 """
 
 import os
+import json
 import sys
 import time
 from datetime import datetime, timedelta
@@ -92,37 +93,105 @@ def resolver_idema(busqueda_nombre):
     return candidatas[0]["indicativo"], candidatas[0]["nombre"]
 
 
+CACHE_DIR = "data"
+
+
+def _ruta_cache(idema):
+    return os.path.join(CACHE_DIR, f"historico_{idema}.json")
+
+
+def _leer_cache(idema):
+    """Lee los registros históricos guardados en ejecuciones anteriores.
+    Si el archivo no existe o está corrupto, se ignora y se parte de cero
+    (no es un error fatal, solo implica pedir más días a AEMET esta vez)."""
+    ruta = _ruta_cache(idema)
+    if not os.path.exists(ruta):
+        return []
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"Aviso: no se pudo leer la caché {ruta}, se ignora: {exc}")
+        return []
+
+
+def _guardar_cache(idema, registros):
+    """Guarda los registros históricos fusionados y ordenados por fecha."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    registros_ordenados = sorted(registros, key=lambda r: r.get("fecha", ""))
+    with open(_ruta_cache(idema), "w", encoding="utf-8") as f:
+        json.dump(registros_ordenados, f, ensure_ascii=False, indent=0)
+
+
+def _fusionar_registros(existentes, nuevos):
+    """Combina registros por fecha sin duplicados. Si una fecha aparece en
+    ambos, gana el nuevo (por si AEMET corrigió un dato ya publicado)."""
+    por_fecha = {r["fecha"]: r for r in existentes if "fecha" in r}
+    for r in nuevos:
+        if "fecha" in r:
+            por_fecha[r["fecha"]] = r
+    return list(por_fecha.values())
+
+
 def obtener_historico(idema, dias):
-    """Descarga los valores climatológicos diarios de los últimos `dias` días.
+    """Devuelve los valores climatológicos diarios de los últimos `dias`
+    días, usando una caché local (data/historico_<idema>.json) para no
+    volver a pedir a AEMET los días que ya se descargaron en una ejecución
+    anterior: solo se piden los días nuevos desde la última fecha guardada.
 
     Los valores diarios de AEMET pasan por un proceso de validación antes de
     publicarse (AEMET indica un retardo oficial de unos 4 días), así que una
     petición cuyo rango llegue hasta "hoy" puede fallar. Por eso se aplica un
-    margen de seguridad (MARGEN_DIAS) y el rango termina unos días antes de hoy.
-
-    AEMET limita además cada petición a un máximo de ~1 año, así que se
-    trocea el rango si hiciera falta (por defecto no hace falta, con 90
-    días).
+    margen de seguridad (MARGEN_DIAS) y el rango objetivo termina unos días
+    antes de hoy.
     """
     MARGEN_DIAS = 5
-    fecha_fin = datetime.utcnow() - timedelta(days=MARGEN_DIAS)
-    fecha_ini = fecha_fin - timedelta(days=dias)
-    registros = []
-    cursor = fecha_ini
-    while cursor < fecha_fin:
-        siguiente = min(cursor + timedelta(days=364), fecha_fin)
-        ini_str = cursor.strftime("%Y-%m-%dT00:00:00UTC")
-        fin_str = siguiente.strftime("%Y-%m-%dT23:59:59UTC")
-        endpoint = (
-            f"/valores/climatologicos/diarios/datos/"
-            f"fechaini/{ini_str}/fechafin/{fin_str}/estacion/{idema}"
-        )
-        try:
-            registros.extend(aemet_get(endpoint))
-        except Exception as exc:
-            print(f"Aviso: no se pudo descargar el tramo {ini_str} - {fin_str}: {exc}")
-        cursor = siguiente + timedelta(days=1)
-    return registros
+    fecha_fin_objetivo = (datetime.utcnow() - timedelta(days=MARGEN_DIAS)).date()
+    fecha_ini_objetivo = fecha_fin_objetivo - timedelta(days=dias)
+
+    cache = _leer_cache(idema)
+    fechas_cache = [r["fecha"][:10] for r in cache if "fecha" in r]
+    ultima_fecha_cache = max(fechas_cache) if fechas_cache else None
+
+    nuevos = []
+    if ultima_fecha_cache and ultima_fecha_cache >= fecha_fin_objetivo.isoformat():
+        print(f"Caché al día para la estación {idema} (hasta {ultima_fecha_cache}); no se pide nada nuevo a AEMET.")
+    else:
+        if ultima_fecha_cache:
+            fecha_ini_peticion = max(
+                fecha_ini_objetivo,
+                datetime.strptime(ultima_fecha_cache, "%Y-%m-%d").date() + timedelta(days=1),
+            )
+        else:
+            fecha_ini_peticion = fecha_ini_objetivo
+
+        if fecha_ini_peticion <= fecha_fin_objetivo:
+            cursor = datetime.combine(fecha_ini_peticion, datetime.min.time())
+            fecha_fin_dt = datetime.combine(fecha_fin_objetivo, datetime.min.time())
+            while cursor <= fecha_fin_dt:
+                siguiente = min(cursor + timedelta(days=364), fecha_fin_dt)
+                ini_str = cursor.strftime("%Y-%m-%dT00:00:00UTC")
+                fin_str = siguiente.strftime("%Y-%m-%dT23:59:59UTC")
+                endpoint = (
+                    f"/valores/climatologicos/diarios/datos/"
+                    f"fechaini/{ini_str}/fechafin/{fin_str}/estacion/{idema}"
+                )
+                try:
+                    nuevos.extend(aemet_get(endpoint))
+                except Exception as exc:
+                    print(f"Aviso: no se pudo descargar el tramo {ini_str} - {fin_str}: {exc}")
+                cursor = siguiente + timedelta(days=1)
+            print(f"Descargados {len(nuevos)} registro(s) nuevo(s) de AEMET para la estación {idema} (desde {fecha_ini_peticion}).")
+
+    cache_actualizada = _fusionar_registros(cache, nuevos)
+    if nuevos:
+        _guardar_cache(idema, cache_actualizada)
+
+    # Solo se devuelve la ventana de días que se quiere mostrar en el dashboard.
+    return [
+        r for r in cache_actualizada
+        if "fecha" in r and fecha_ini_objetivo.isoformat() <= r["fecha"][:10] <= fecha_fin_objetivo.isoformat()
+    ]
 
 
 def obtener_prediccion(municipio):
