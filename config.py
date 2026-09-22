@@ -21,7 +21,7 @@ STATIONS = [
     },
     # Ejemplo de cómo añadir otra estación en el futuro:
      {
-         "nombre": "Madrid",
+         "nombre": "Valencia Aeropuerto",
          "idema": None,
          "busqueda_nombre": "Valencia Aeropuerto",
          "municipio": "8414A",
