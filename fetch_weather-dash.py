@@ -199,6 +199,14 @@ def obtener_prediccion(municipio):
     data = aemet_get(f"/prediccion/especifica/municipio/diaria/{municipio}")
     return data[0]
 
+def obtener_observacion_actual(idema_obs):
+    """Descarga las lecturas recientes (última jornada) de una estación
+    automática de observación y devuelve la más reciente (AEMET las da
+    ordenadas de más antigua a más reciente, normalmente una por hora)."""
+    lecturas = aemet_get(f"/observacion/convencional/datos/estacion/{idema_obs}")
+    if not lecturas:
+        return None
+    return lecturas[-1]
 
 def historico_a_dataframe(registros):
     """Convierte los registros diarios de AEMET en un DataFrame limpio.
@@ -397,6 +405,41 @@ def construir_figura_prediccion(df):
     )
     return fig
 
+def construir_tarjetas_kpi(lectura):
+    """Tarjetas destacadas con las condiciones observadas más recientes:
+    temperatura, viento, humedad y precipitación de la última hora."""
+    if not lectura:
+        return ""
+
+    hora = lectura.get("fint")
+    if hora:
+        try:
+            hora = datetime.strptime(hora, "%Y-%m-%dT%H:%M:%S").strftime("%H:%M UTC")
+        except ValueError:
+            pass
+
+    def fmt(valor, unidad, decimales=1):
+        return f"{valor:.{decimales}f} {unidad}" if valor is not None else "sin datos"
+
+    vv = lectura.get("vv")
+    viento_kmh = vv * 3.6 if vv is not None else None
+
+    kpis = [
+        ("Temperatura ahora", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C")),
+        ("Viento ahora", MATERIAL["indigo"], fmt(viento_kmh, "km/h")),
+        ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0)),
+        ("Precipitación (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm")),
+    ]
+
+    tarjetas = "".join(
+        f'<div class="tarjeta-kpi" style="border-top-color:{color};">'
+        f"<h3>{etiqueta}</h3>"
+        f'<p class="valor-kpi">{valor}</p>'
+        f"</div>"
+        for etiqueta, color, valor in kpis
+    )
+    nota_hora = f'<p class="aviso">Última observación: {hora}</p>' if hora else ""
+    return f'<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
 
 #: (etiqueta, color, columna para el valor máximo, columna para el valor
 #: mínimo, unidad). Cuando max y min vienen de la misma columna (p. ej.
@@ -453,13 +496,24 @@ def main():
     generado = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
     for estacion in STATIONS:
-        idema = estacion.get("idema")
+                idema = estacion.get("idema")
         nombre = estacion["nombre"]
         df_hist, df_pred = pd.DataFrame(), pd.DataFrame()
+        lectura_actual = None
 
-        # El histórico y la predicción se piden por separado: si uno de los
-        # dos falla (p. ej. por el límite de peticiones de AEMET), el otro
-        # se sigue mostrando en vez de perder todo el bloque de la estación.
+        # La observación actual, el histórico y la predicción se piden por
+        # separado: si una de las tres falla (p. ej. por el límite de
+        # peticiones de AEMET), las demás se siguen mostrando en vez de
+        # perder todo el bloque de la estación.
+        try:
+            idema_obs = estacion.get("idema_tiempo_real") or idema
+            print(f"Procesando observación actual de {nombre} (idema={idema_obs})...")
+            lectura_actual = obtener_observacion_actual(idema_obs)
+        except Exception as exc:
+            print(f"Aviso: no se pudo obtener la observación actual de {nombre}: {exc}")
+
+        time.sleep(2)
+
         try:
             if not idema:
                 idema, nombre_real = resolver_idema(estacion["busqueda_nombre"])
@@ -487,6 +541,7 @@ def main():
             print(f"Aviso: no se pudo obtener la predicción de {nombre}: {exc}")
 
         seccion = [f'<section class="estacion"><h2>{nombre}</h2>']
+        seccion.append(construir_tarjetas_kpi(lectura_actual))
 
         # Extremos previstos arriba (donde antes estaban los históricos);
         # pronóstico primero (con fondo propio), histórico después con sus
@@ -577,6 +632,10 @@ h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-botto
 .tarjeta p {{ margin: 0.2rem 0; font-size: 0.9rem; }}
 .tarjeta .fecha {{ color: var(--texto-secundario); font-size: 0.8rem; }}
 .aviso {{ color: var(--texto-secundario); font-style: italic; }}
+.tarjetas-kpi {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.5rem 0 0.25rem; }}
+.tarjeta-kpi {{ flex: 1 1 150px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }}
+.tarjeta-kpi h3 {{ margin: 0 0 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--texto-secundario); }}
+.valor-kpi {{ margin: 0; font-size: 1.7rem; font-weight: 700; }}
 .bloque-pronostico {{ background: var(--fondo-pronostico); border-radius: 8px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }}
 .bloque-pronostico .subtitulo {{ margin-top: 0; }}
 .graficos-apilados {{ display: flex; flex-direction: column; gap: 0.5rem; }}
