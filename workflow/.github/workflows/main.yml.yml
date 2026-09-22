@@ -1,5 +1,0 @@
-name: Mi Workflow
-on:
-  workflow_dispatch: # Esto habilita el botón manual
-jobs:
-  ...
