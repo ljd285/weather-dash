@@ -110,11 +110,36 @@ def pruebas_post():
                 print("    Texto:", re.sub(r"\s+", " ", r.text[:400]))
 
 
+def funciones_de_url():
+    """Muestra el código de las funciones que construyen la dirección de los
+    datos (getURL, paramStr, getDateString...) y dónde se definen las
+    variables que usan."""
+    base = f"{BASE}/PortusData/"
+    fuentes = {}
+    for nombre in ["js/main/rtChart.js", "js/common/commonChart.js", "js/common/interfazDefault.js",
+                   "js/common/controlesDefault.js", "js/resources/strings.js"]:
+        try:
+            fuentes[nombre] = SESION.get(urljoin(base, nombre), timeout=30).text
+        except requests.RequestException as exc:
+            print(f"  ERROR {nombre}: {exc}")
+    pagina = SESION.get(PAGINAS[0], timeout=30).text
+    fuentes["(página rtChart)"] = pagina
+    buscar = [r"function getURL\s*\(", r"function paramStr\s*\(", r"function getDateString\s*\(",
+              r"function getCompareURL\s*\(", r"function getXXHours\s*\(", r"(?:var|let|const)\s+(?:urlBase|baseURL|url_base|servidor|server)\b",
+              r"details\s*=", r"params\s*=\s*get", r"\bint\b\s*=", r"getParameterByName\s*\("]
+    for nombre, texto in fuentes.items():
+        for patron in buscar:
+            for m in list(re.finditer(patron, texto))[:2]:
+                print(f"  [{nombre}] {patron}:")
+                print("    ", re.sub(r"\s+", " ", texto[max(0, m.start() - 120):m.start() + 700]))
+    # Todos los <script> en línea de la página (suelen fijar variables globales).
+    for trozo in re.findall(r"<script>(.*?)</script>", pagina, re.S)[:5]:
+        print("  [script en línea]", re.sub(r"\s+", " ", trozo)[:1200])
+
+
 def main():
-    print("== Cómo pide los datos la gráfica en tiempo real ==")
-    llamadas_en_scripts()
-    print("\n== Pruebas con POST ==")
-    pruebas_post()
+    print("== Cómo construye la gráfica la dirección de los datos ==")
+    funciones_de_url()
     print("\n== robots.txt ==")
     resumir(f"{BASE}/robots.txt", 2000)
 
