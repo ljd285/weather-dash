@@ -43,12 +43,7 @@ def test_mes_completo_salta_meses_incompletos():
     fechas = pd.date_range("2026-08-01", "2026-09-18")
     df = pd.DataFrame({"fecha": fechas, "tmax": 30.0})
 
-    class Fecha(datetime):
-        @classmethod
-        def utcnow(cls):
-            return datetime(2026, 10, 3)
-
-    with mock.patch.object(f, "datetime", Fecha):
+    with mock.patch.object(f, "_ahora_utc", lambda: datetime(2026, 10, 3)):
         anio, mes, df_mes = f._mes_completo_mas_reciente(df)
     assert (anio, mes, len(df_mes)) == (2026, 8, 31)  # septiembre está incompleto
 

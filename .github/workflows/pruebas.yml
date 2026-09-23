@@ -2,8 +2,11 @@ name: Pruebas
 
 # Comprueba el código en cada cambio (no toca AEMET: las pruebas usan datos
 # de ejemplo). El workflow que publica el dashboard es update_dashboard.yml.
+# En las ramas de trabajo ya se ejecutan por el pull request; en main, al
+# fusionar. Así no se ejecutan dos veces por cada cambio.
 on:
   push:
+    branches: [main]
     paths-ignore: ["data/**"]
   pull_request: {}
 

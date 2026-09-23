@@ -25,14 +25,15 @@ import time
 import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
+from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-import requests
 import plotly.graph_objects as go
+import requests
 from plotly.offline import get_plotlyjs_version
 
-from config import STATIONS, DIAS_HISTORICO
+from config import DIAS_HISTORICO, STATIONS
 
 BASE_URL = "https://opendata.aemet.es/opendata/api"
 
@@ -178,8 +179,13 @@ def _fusionar_registros(existentes, nuevos):
 MARGEN_DIAS = 5
 
 
+def _ahora_utc():
+    """Fecha y hora UTC actuales, sin zona (como las fechas de AEMET)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def fecha_fin_historico():
-    return (datetime.utcnow() - timedelta(days=MARGEN_DIAS)).date()
+    return (_ahora_utc() - timedelta(days=MARGEN_DIAS)).date()
 
 
 def inicio_anio_hidrologico(fecha):
@@ -351,7 +357,7 @@ def construir_minigrafico(observaciones, horas=24):
     puntos = [
         (margen + (ancho - 2 * margen) * (t - t0).total_seconds() / rango_t,
          alto - margen - (alto - 2 * margen) * (v - vmin) / rango_v)
-        for t, v in zip(df["fint"], df["ta"])
+        for t, v in zip(df["fint"], df["ta"], strict=True)
     ]
     trazo = " ".join(f"{x:.1f},{y:.1f}" for x, y in puntos)
     ultimo_x, ultimo_y = puntos[-1]
@@ -507,7 +513,7 @@ def extremos_por_mes(crudos):
             escala = 10 if decimas else 1
             resultado[clave] = [
                 {"valor": v / escala if v is not None else None, "dia": _num(d), "anio": _num(a), "unidad": unidad}
-                for v, d, a in zip(numeros, dias[:12], anios[:12])
+                for v, d, a in zip(numeros, dias[:12], anios[:12], strict=True)
             ]
     return resultado
 
@@ -624,7 +630,7 @@ def _avisos_de_cap(raiz):
         if nivel not in NIVELES_AVISO:
             continue  # "verde" = sin aviso
 
-        def fecha(etiqueta):
+        def fecha(etiqueta, info=info):
             valor = texto(info, etiqueta)
             try:
                 return datetime.fromisoformat(valor) if valor else None
@@ -1105,7 +1111,7 @@ def _grafico_intensidad_lluvia(df, layout_comun):
     hora = datos["horapintmax"] if "horapintmax" in datos.columns else pd.Series("", index=datos.index)
     textos = [
         f"{clase_intensidad_lluvia(v).capitalize()}" + (f" · a las {h}" if isinstance(h, str) and ":" in h else "")
-        for v, h in zip(datos["pintmax"], hora)
+        for v, h in zip(datos["pintmax"], hora, strict=True)
     ]
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -1207,7 +1213,7 @@ def prediccion_horaria_a_dataframe(prediccion, ahora=None):
     df = df.drop_duplicates("fecha").reset_index(drop=True)
 
     noches = []
-    for (_, ocaso), (orto_siguiente, _) in zip(soles, soles[1:] + [(None, None)]):
+    for (_, ocaso), (orto_siguiente, _) in zip(soles, soles[1:] + [(None, None)], strict=True):
         fin = orto_siguiente if orto_siguiente is not None else ocaso + pd.Timedelta(hours=11)
         noches.append((ocaso, fin))
     if soles:
@@ -1301,10 +1307,10 @@ def color_temperatura(t):
     elif t >= ESCALA_TEMPERATURA[-1][0]:
         r, g, b = ESCALA_TEMPERATURA[-1][1]
     else:
-        for (t0, c0), (t1, c1) in zip(ESCALA_TEMPERATURA, ESCALA_TEMPERATURA[1:]):
+        for (t0, c0), (t1, c1) in pairwise(ESCALA_TEMPERATURA):
             if t0 <= t <= t1:
                 k = (t - t0) / (t1 - t0)
-                r, g, b = (round(a + (z - a) * k) for a, z in zip(c0, c1))
+                r, g, b = (round(a + (z - a) * k) for a, z in zip(c0, c1, strict=True))
                 break
     return f"#{r:02X}{g:02X}{b:02X}"
 
@@ -1466,7 +1472,7 @@ def construir_graficos_prediccion(df):
         leyenda = "".join(
             f'<span class="uv-cat"><span class="uv-muestra" style="background:{color};"></span>'
             f'{nombre} ({"≥ " + str(limite_anterior + 1) if limite is None else f"{limite_anterior + 1}–{limite}" if limite_anterior + 1 < limite else limite})</span>'
-            for (limite, nombre, color), limite_anterior in zip(CATEGORIAS_UV, [-1] + [c[0] for c in CATEGORIAS_UV[:-1]])
+            for (limite, nombre, color), limite_anterior in zip(CATEGORIAS_UV, [-1] + [c[0] for c in CATEGORIAS_UV[:-1]], strict=True)
         )
         graficos.append(f'<p class="aviso leyenda-uv">Categorías de la OMS: {leyenda}. AEMET solo da el índice UV de los primeros días.</p>')
 
@@ -1668,7 +1674,7 @@ def _mes_completo_mas_reciente(df_hist):
         return None
     fechas = set(df_hist["fecha"].dt.normalize())
     primera = min(fechas)
-    cursor = datetime.utcnow().date().replace(day=1) - timedelta(days=1)
+    cursor = _ahora_utc().date().replace(day=1) - timedelta(days=1)
     while pd.Timestamp(cursor.replace(day=1)) >= primera.replace(day=1):
         anio, mes = cursor.year, cursor.month
         dias_mes = calendar.monthrange(anio, mes)[1]
@@ -1990,7 +1996,7 @@ def construir_rosa_vientos(df):
     tmax_media = datos.groupby("sector")["tmax"].mean()
 
     fig = go.Figure()
-    for (minimo, maximo, etiqueta), color in zip(CLASES_RACHA, RAMPA_RACHA["light"]):
+    for (minimo, maximo, etiqueta), color in zip(CLASES_RACHA, RAMPA_RACHA["light"], strict=True):
         en_clase = datos[(datos["racha"] >= minimo) & ((datos["racha"] < maximo) if maximo else True)]
         conteo = en_clase["sector"].value_counts().reindex(SECTORES_VIENTO, fill_value=0)
         fig.add_trace(go.Barpolar(
@@ -2054,7 +2060,7 @@ def notas_records(df, extremos, prevision=False):
     for clave, col, _, nombre, por_abajo, margen in RECORDS_MOSTRADOS:
         if clave not in extremos or col not in df.columns:
             continue
-        for fecha, valor in zip(df["fecha"], df[col]):
+        for fecha, valor in zip(df["fecha"], df[col], strict=True):
             record = extremos[clave][fecha.month - 1]
             resultado = _comparar_con_record(valor, record["valor"], por_abajo, margen)
             if not resultado:
