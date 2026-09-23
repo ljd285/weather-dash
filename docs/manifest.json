@@ -1,0 +1,25 @@
+{
+  "name": "Dashboard climatológico AEMET",
+  "short_name": "AEMET Dashboard",
+  "description": "Histórico, pronóstico y comparación con valores normales de AEMET OpenData.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FAFAFA",
+  "theme_color": "#3F51B5",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
