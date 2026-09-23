@@ -68,8 +68,54 @@ def rutas_en(texto):
     return sorted({m.group(1) for m in PATRON_RUTA.finditer(texto)})
 
 
+def llamadas_en_scripts():
+    """Busca en los scripts de la gráfica en tiempo real cómo piden los datos
+    (ajax/fetch/d3.json/POST) y muestra el código de alrededor."""
+    base = f"{BASE}/PortusData/"
+    for nombre in ["js/main/rtChart.js", "js/common/commonChart.js", "js/common/interfazDefault.js",
+                   "js/common/controlesDefault.js"]:
+        url = urljoin(base, nombre)
+        try:
+            js = SESION.get(url, timeout=30).text
+        except requests.RequestException as exc:
+            print(f"  ERROR {url}: {exc}")
+            continue
+        print(f"\n== {nombre} ({len(js)} caracteres)")
+        patron = re.compile(r"(?i)(\$\.ajax|\$\.post|\$\.getJSON|d3\.json|d3\.request|fetch\(|XMLHttpRequest|portussvr|RTData|lastData|contentType|type\s*:\s*['\"]POST)")
+        vistos = 0
+        for m in patron.finditer(js):
+            inicio = max(0, m.start() - 250)
+            print("  ···", re.sub(r"\s+", " ", js[inicio:m.start() + 450]))
+            vistos += 1
+            if vistos >= 12:
+                break
+
+
+def pruebas_post():
+    """Los servicios RTData/lastData responden 405 a GET: se prueban con POST."""
+    for ruta in ["RTData/station", "lastData/station"]:
+        url = f"{BASE}/portussvr/api/{ruta}/{ESTACION}?locale=es"
+        for cuerpo in [["WaterTemp"], ["WaterTemp", "Hm0", "Tp", "MeanDir"], {}, None]:
+            try:
+                r = SESION.post(url, json=cuerpo, timeout=30) if cuerpo is not None else SESION.post(url, timeout=30)
+            except requests.RequestException as exc:
+                print(f"  ERROR POST {url}: {exc}")
+                continue
+            print(f"  POST {url} cuerpo={json.dumps(cuerpo)} -> {r.status_code} {r.headers.get('content-type', '')} {len(r.content)} bytes")
+            try:
+                datos = r.json()
+                print("    JSON:", describir(datos))
+                print("    Muestra:", json.dumps(datos, ensure_ascii=False)[:1500])
+            except ValueError:
+                print("    Texto:", re.sub(r"\s+", " ", r.text[:400]))
+
+
 def main():
-    print("== robots.txt ==")
+    print("== Cómo pide los datos la gráfica en tiempo real ==")
+    llamadas_en_scripts()
+    print("\n== Pruebas con POST ==")
+    pruebas_post()
+    print("\n== robots.txt ==")
     resumir(f"{BASE}/robots.txt", 2000)
 
     encontradas = set()
