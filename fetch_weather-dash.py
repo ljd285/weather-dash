@@ -223,7 +223,7 @@ def obtener_normales(idema):
                 registros_cache = json.load(f)
             print(
                 f"Normales de {idema} leídos de caché: {len(registros_cache)} registro(s). "
-                f"Ejemplo de 'fecha' guardada: {[r.get('fecha') for r in registros_cache[:3]]}"
+                f"Campos y valores del primer registro: {registros_cache[0] if registros_cache else 'ninguno'}"
             )
             return registros_cache
         except (json.JSONDecodeError, OSError) as exc:
@@ -235,7 +235,7 @@ def obtener_normales(idema):
         json.dump(registros, f, ensure_ascii=False, indent=0)
     print(
         f"Normales descargados para {idema}: {len(registros)} registro(s). "
-        f"Ejemplo de 'fecha' recibida: {[r.get('fecha') for r in registros[:3]]}"
+        f"Campos y valores del primer registro: {registros[0] if registros else 'ninguno'}"
     )
     return registros
 
