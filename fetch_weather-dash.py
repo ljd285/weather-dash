@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+#from plotly.subplots import make_subplots
 
 from config import STATIONS, DIAS_HISTORICO
 
@@ -400,63 +400,77 @@ def construir_graficos_historico(df):
     return graficos
 
 
-def construir_figura_prediccion(df):
-    """Gráfico de predicción (2x2): temperatura y humedad como barras
-    superpuestas (mínima delante/encima de máxima, con el valor dentro de
-    la barra), viento como líneas, y una línea vertical separando cada día
-    en los cuatro paneles."""
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=("Temperatura prevista (°C)", "Prob. precipitación (%)", "Viento previsto (km/h)", "Humedad prevista (%)"),
-        vertical_spacing=0.22, horizontal_spacing=0.08,
-    )
+def construir_graficos_prediccion(df):
+    """Devuelve una lista de fragmentos HTML, uno por variable (temperatura,
+    probabilidad de precipitación, viento, humedad), cada uno a ancho
+    completo — en vez de una única cuadrícula 2x2, que en pantallas
+    estrechas (móvil) quedaría ilegible porque Plotly la calcula como una
+    sola imagen de tamaño fijo. Temperatura y humedad usan barras
+    superpuestas (mínima delante/encima de máxima, valor dentro/fuera de
+    la barra); cada gráfico lleva una línea vertical separando los días."""
     if df.empty:
-        fig.update_layout(height=700, template="plotly_white")
-        return fig
+        return ['<p class="aviso">No se pudo cargar la predicción en esta ejecución.</p>']
+
+    graficos = []
+    config = {"responsive": True}
+    layout_comun = dict(template="plotly_white", height=320, margin=dict(t=50, b=40, l=50, r=20))
+
+    def lineas_de_dia(fig):
+        for fecha in df["fecha"]:
+            fig.add_vline(x=fecha, line_width=1, line_dash="dot", line_color=MATERIAL["gris"], opacity=0.3)
 
     # Temperatura: la máxima se dibuja primero (detrás, texto fuera para que
     # no quede tapado) y la mínima después (delante/encima, texto dentro).
+    fig = go.Figure()
     fig.add_trace(go.Bar(
         x=df["fecha"], y=df["tmax"], name="Máxima prevista", marker_color=MATERIAL["rojo"],
         text=_texto_barras(df["tmax"], "°"), textposition="outside",
-    ), row=1, col=1)
+    ))
     fig.add_trace(go.Bar(
         x=df["fecha"], y=df["tmin"], name="Mínima prevista", marker_color=MATERIAL["azul"],
         text=_texto_barras(df["tmin"], "°"), textposition="inside",
-    ), row=1, col=1)
-    fig.update_yaxes(range=[5, 45], row=1, col=1)
+    ))
+    lineas_de_dia(fig)
+    fig.update_yaxes(range=[5, 45], title="°C")
+    fig.update_layout(title="Temperatura prevista", barmode="overlay", legend=dict(orientation="h", y=-0.25), **layout_comun)
+    graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
+    # Probabilidad de precipitación
     if "prob_precip" in df.columns:
-        fig.add_trace(go.Bar(x=df["fecha"], y=df["prob_precip"], name="Prob. precipitación", marker_color=MATERIAL["azul_claro"], showlegend=False), row=1, col=2)
-    fig.update_yaxes(range=[0, 100], row=1, col=2)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=df["fecha"], y=df["prob_precip"], name="Prob. precipitación", marker_color=MATERIAL["azul_claro"]))
+        lineas_de_dia(fig)
+        fig.update_yaxes(range=[0, 100], title="%")
+        fig.update_layout(title="Prob. precipitación prevista", showlegend=False, **layout_comun)
+        graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
+    # Viento
+    fig = go.Figure()
     if "viento_max" in df.columns:
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento_max"], name="Viento previsto", mode="lines+markers", line=dict(color=MATERIAL["indigo"], width=2)), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento_max"], name="Viento previsto", mode="lines+markers", line=dict(color=MATERIAL["indigo"], width=2)))
     if "racha_max" in df.columns:
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha_max"], name="Racha prevista", mode="lines+markers", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")), row=2, col=1)
-    fig.update_yaxes(range=[0, 50], row=2, col=1)
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha_max"], name="Racha prevista", mode="lines+markers", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")))
+    lineas_de_dia(fig)
+    fig.update_yaxes(range=[0, 50], title="km/h")
+    fig.update_layout(title="Viento previsto", legend=dict(orientation="h", y=-0.25), **layout_comun)
+    graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
     # Humedad: igual que temperatura, mínima delante/encima de máxima.
+    fig = go.Figure()
     fig.add_trace(go.Bar(
         x=df["fecha"], y=df["hum_max"], name="Humedad máx. prevista", marker_color=MATERIAL["teal"],
         text=_texto_barras(df["hum_max"], "%"), textposition="outside",
-    ), row=2, col=2)
+    ))
     fig.add_trace(go.Bar(
         x=df["fecha"], y=df["hum_min"], name="Humedad mín. prevista", marker_color=MATERIAL["verde"],
         text=_texto_barras(df["hum_min"], "%"), textposition="inside",
-    ), row=2, col=2)
-    fig.update_yaxes(range=[0, 100], row=2, col=2)
+    ))
+    lineas_de_dia(fig)
+    fig.update_yaxes(range=[0, 100], title="%")
+    fig.update_layout(title="Humedad prevista", barmode="overlay", legend=dict(orientation="h", y=-0.25), **layout_comun)
+    graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
-    # Una línea vertical por cada día, en los cuatro paneles.
-    for fecha in df["fecha"]:
-        for fila, columna in [(1, 1), (1, 2), (2, 1), (2, 2)]:
-            fig.add_vline(x=fecha, line_width=1, line_dash="dot", line_color=MATERIAL["gris"], opacity=0.3, row=fila, col=columna)
-
-    fig.update_layout(
-        height=700, template="plotly_white", barmode="overlay",
-        legend=dict(orientation="h", y=-0.1), margin=dict(t=60, b=40),
-    )
-    return fig
+    return graficos
 
 
 def _slug(texto):
@@ -711,10 +725,9 @@ def main():
 
         seccion.append('<div class="bloque-pronostico">')
         seccion.append('<h3 class="subtitulo">Pronóstico (7 días)</h3>')
-        if df_pred.empty:
-            seccion.append('<p class="aviso">No se pudo cargar la predicción en esta ejecución.</p>')
-        else:
-            seccion.append(construir_figura_prediccion(df_pred).to_html(full_html=False, include_plotlyjs=False))
+        seccion.append('<div class="graficos-apilados">')
+        seccion.extend(construir_graficos_prediccion(df_pred))
+        seccion.append('</div>')
         seccion.append('</div>')
 
         seccion.append('<h3 class="subtitulo">Histórico</h3>')
@@ -828,6 +841,14 @@ h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-botto
 .graficos-apilados {{ display: flex; flex-direction: column; gap: 0.5rem; }}
 .graficos-apilados > div, .graficos-apilados .plotly-graph-div {{ width: 100% !important; }}
 footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; text-align: center; }}
+@media (max-width: 640px) {{
+    body {{ padding: 1rem; }}
+    h1 {{ font-size: 1.3rem; }}
+    .estacion {{ padding: 1rem; }}
+    .bloque-pronostico {{ padding: 0.75rem 0.75rem 0.25rem; }}
+    .tarjeta, .tarjeta-kpi {{ flex-basis: 100%; }}
+    .mapa-estaciones {{ height: 240px; }}
+}}
 </style>
 </head>
 <body>
