@@ -50,6 +50,24 @@ ZONA_HORARIA = ZoneInfo("Europe/Madrid")
 # instalado: si no coinciden, los gráficos pueden no dibujarse.
 PLOTLY_JS_URL = f"https://cdn.plot.ly/plotly-{get_plotlyjs_version()}.min.js"
 
+# Todos los gráficos en español: nombres de meses y días en los ejes, y coma
+# decimal. El idioma "es" se registra en la propia página (ver LOCALE_ES_JS).
+CONFIG_PLOTLY = {"responsive": True, "locale": "es"}
+LOCALE_ES_JS = """Plotly.register({
+    moduleType: 'locale', name: 'es',
+    dictionary: {'Autoscale': 'Autoescalar', 'Reset axes': 'Restablecer ejes', 'Zoom in': 'Acercar',
+                 'Zoom out': 'Alejar', 'Pan': 'Desplazar', 'Zoom': 'Zoom',
+                 'Download plot as a png': 'Descargar gráfico como PNG'},
+    format: {
+        days: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'],
+        shortDays: ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+        months: ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+                 'septiembre', 'octubre', 'noviembre', 'diciembre'],
+        shortMonths: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'],
+        date: '%d/%m/%Y', decimal: ',', thousands: '.'
+    }
+});"""
+
 # Paleta Material Design (tonos 500, salvo donde se indica)
 MATERIAL = {
     "rojo": "#F44336",
@@ -643,6 +661,11 @@ def _num(valor):
         return None
 
 
+def _es(valor, decimales=1):
+    """Número con coma decimal, como se escribe en español (26,3)."""
+    return f"{valor:.{decimales}f}".replace(".", ",")
+
+
 def _rango_eje(series, minimo, maximo, holgura):
     """Rango del eje Y: el habitual [minimo, maximo], ampliado (con
     `holgura` de margen) si algún dato se sale. Así los ejes de gráficos
@@ -728,6 +751,16 @@ def _max_valor(lista, campo):
     return max(valores) if valores else None
 
 
+def _dato_del_dia(lista, campo):
+    """De una lista de AEMET por periodos, el elemento del día completo
+    ("00-24") o, si no lo hay, el primero con `campo` relleno."""
+    candidatos = [item for item in lista or [] if item.get(campo) not in (None, "")]
+    for item in candidatos:
+        if item.get("periodo") in ("00-24", None, ""):
+            return item
+    return candidatos[0] if candidatos else None
+
+
 def prediccion_a_dataframe(prediccion):
     """Convierte la predicción diaria (7 días) de AEMET en un DataFrame.
 
@@ -747,6 +780,8 @@ def prediccion_a_dataframe(prediccion):
 
         humedad = dia.get("humedadRelativa", {}) or {}
         sensacion = dia.get("sensTermica", {}) or {}
+        cielo = _dato_del_dia(dia.get("estadoCielo"), "value")
+        viento = _dato_del_dia(dia.get("viento"), "direccion")
 
         filas.append({
             "fecha": fecha,
@@ -760,6 +795,9 @@ def prediccion_a_dataframe(prediccion):
             "sens_max": sensacion.get("maxima"),
             "sens_min": sensacion.get("minima"),
             "uv_max": dia.get("uvMax"),  # AEMET solo lo da para los primeros días
+            "cielo": (cielo or {}).get("value"),
+            "cielo_texto": (cielo or {}).get("descripcion"),
+            "viento_dir": (viento or {}).get("direccion"),
         })
 
     df = pd.DataFrame(filas)
@@ -774,6 +812,10 @@ def prediccion_a_dataframe(prediccion):
 def _texto_barras(serie, sufijo):
     """Etiquetas de texto para barras, en el mismo orden que la serie."""
     return [f"{v:.0f}{sufijo}" if pd.notna(v) else "" for v in serie]
+
+
+# Fechas en orden español ("6 sept") en ejes y ventanas emergentes.
+FORMATO_FECHAS = dict(tickformat="%-d %b", hoverformat="%-d %b %Y")
 
 
 def _rangeselector():
@@ -803,7 +845,7 @@ def construir_graficos_historico(df, normales_registros=None):
         return ['<p class="aviso">No se pudieron cargar datos históricos en esta ejecución.</p>']
 
     graficos = []
-    config = {"responsive": True}
+    config = CONFIG_PLOTLY
     layout_comun = dict(template="plotly_white", height=360, margin=dict(t=70, b=40, l=50, r=20))
 
     # Temperatura, sobre la banda normal (media de las máximas y de las
@@ -827,7 +869,7 @@ def construir_graficos_historico(df, normales_registros=None):
         series_rango += [df_normal["tm_max_md"], df_normal["tm_min_md"]]
     fig.add_trace(go.Scatter(x=df["fecha"], y=df["tmax"], name="Máxima", line=dict(color=MATERIAL["rojo"], width=2)))
     fig.add_trace(go.Scatter(x=df["fecha"], y=df["tmin"], name="Mínima", line=dict(color=MATERIAL["azul"], width=2)))
-    fig.update_xaxes(rangeselector=_rangeselector())
+    fig.update_xaxes(rangeselector=_rangeselector(), **FORMATO_FECHAS)
     fig.update_yaxes(range=_rango_eje(series_rango, 5, 45, 2), title="°C")
     fig.update_layout(hovermode="x unified")
     fig.update_layout(title="Temperatura", legend=dict(orientation="h", y=-0.25, traceorder="normal"), **layout_comun)
@@ -837,7 +879,7 @@ def construir_graficos_historico(df, normales_registros=None):
     if "prec" in df.columns:
         fig = go.Figure()
         fig.add_trace(go.Bar(x=df["fecha"], y=df["prec"], name="Precipitación", marker_color=MATERIAL["azul_claro"]))
-        fig.update_xaxes(rangeselector=_rangeselector())
+        fig.update_xaxes(rangeselector=_rangeselector(), **FORMATO_FECHAS)
         fig.update_yaxes(range=_rango_eje([df["prec"]], 0, 50, 5), title="mm")
         fig.update_layout(title="Precipitación", showlegend=False, **layout_comun)
         graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -852,7 +894,7 @@ def construir_graficos_historico(df, normales_registros=None):
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["velmedia"], name="Vel. media", line=dict(color=MATERIAL["indigo"], width=2)))
     if "racha" in df.columns:
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha"], name="Racha máx.", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")))
-    fig.update_xaxes(rangeselector=_rangeselector())
+    fig.update_xaxes(rangeselector=_rangeselector(), **FORMATO_FECHAS)
     fig.update_yaxes(range=_rango_eje([df.get("velmedia"), df.get("racha")], 0, 80, 5), title="km/h")
     fig.update_layout(title="Viento", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -863,7 +905,7 @@ def construir_graficos_historico(df, normales_registros=None):
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["hrmax"], name="Humedad máx.", line=dict(color=MATERIAL["teal"], width=2)))
     if "hrmin" in df.columns:
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["hrmin"], name="Humedad mín.", line=dict(color=MATERIAL["verde"], width=2)))
-    fig.update_xaxes(rangeselector=_rangeselector())
+    fig.update_xaxes(rangeselector=_rangeselector(), **FORMATO_FECHAS)
     fig.update_yaxes(range=[0, 100], title="%")
     fig.update_layout(title="Humedad relativa", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -891,7 +933,7 @@ def construir_graficos_historico(df, normales_registros=None):
                 hovertemplate="%{y:.1f} hPa",
             ))
             series.append(df_normal["q_med_md"])
-        fig.update_xaxes(rangeselector=_rangeselector())
+        fig.update_xaxes(rangeselector=_rangeselector(), **FORMATO_FECHAS)
         fig.update_yaxes(range=_rango_eje(series, 1000, 1025, 2), title="hPa")
         fig.update_layout(
             title="Presión atmosférica (a la altura de la estación)", hovermode="x unified",
@@ -913,7 +955,7 @@ def construir_graficos_historico(df, normales_registros=None):
                 line=dict(color=MATERIAL["normal"], width=1.5, dash="dash"),
                 hovertemplate="%{y:.1f} h<extra>Media normal</extra>",
             ))
-        fig.update_xaxes(rangeselector=_rangeselector())
+        fig.update_xaxes(rangeselector=_rangeselector(), **FORMATO_FECHAS)
         fig.update_yaxes(range=[0, 15], title="h")
         fig.update_layout(title="Horas de sol", legend=dict(orientation="h", y=-0.25), **layout_comun)
         graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -956,7 +998,7 @@ def _grafico_intensidad_lluvia(df, config, layout_comun):
             annotation_text=nombre, annotation_position="top left",
             annotation_font=dict(size=10, color=MATERIAL["gris"]),
         )
-    fig.update_xaxes(rangeselector=_rangeselector(), range=[df["fecha"].min(), df["fecha"].max() + pd.Timedelta(days=1)])
+    fig.update_xaxes(rangeselector=_rangeselector(), **FORMATO_FECHAS, range=[df["fecha"].min(), df["fecha"].max() + pd.Timedelta(days=1)])
     fig.update_yaxes(range=_rango_eje([datos["pintmax"]], 0, 70, 10), title="mm/h")
     fig.update_layout(title="Intensidad máxima de la lluvia", showlegend=False, **layout_comun)
     return (
@@ -1059,7 +1101,7 @@ def construir_graficos_horarios(df, noches):
     va sombreada."""
     if df.empty:
         return []
-    config = {"responsive": True}
+    config = CONFIG_PLOTLY
     layout_comun = dict(template="plotly_white", height=300, margin=dict(t=50, b=40, l=50, r=20), hovermode="x unified")
     inicio, fin = df["fecha"].min(), df["fecha"].max()
 
@@ -1068,7 +1110,8 @@ def construir_graficos_horarios(df, noches):
             if fin_noche > inicio and ini_noche < fin:
                 fig.add_vrect(x0=max(ini_noche, inicio), x1=min(fin_noche, fin), fillcolor=MATERIAL["gris"],
                               opacity=0.12, line_width=0, layer="below")
-        fig.update_xaxes(range=[inicio, fin], dtick=12 * 3600 * 1000, tick0=inicio.normalize(), tickformat="%H h<br>%d/%m", tickangle=0)
+        fig.update_xaxes(range=[inicio, fin], dtick=12 * 3600 * 1000, tick0=inicio.normalize(),
+                         tickformat="%H h<br>%a %-d", hoverformat="%a %-d, %H h", tickangle=0)
         fig.update_yaxes(range=rango, title=eje)
         fig.update_layout(title=titulo, legend=dict(orientation="h", y=-0.3), **layout_comun)
         return fig.to_html(full_html=False, include_plotlyjs=False, config=config)
@@ -1108,6 +1151,57 @@ def construir_graficos_horarios(df, noches):
     return graficos
 
 
+#: Iconos por código de estado del cielo de AEMET (sin la "n" de noche).
+#: Códigos: 11 despejado, 12 poco nuboso, 13 intervalos nubosos, 14 nuboso,
+#: 15 muy nuboso, 16 cubierto, 17 nubes altas; 2x lluvia, 3x nieve, 4x lluvia
+#: escasa, 5x tormenta, 6x tormenta con lluvia escasa, 7x nieve escasa,
+#: 81 niebla, 82 bruma, 83 calima.
+ICONOS_CIELO = {"11": "☀️", "12": "🌤️", "13": "⛅", "14": "🌥️", "15": "☁️", "16": "☁️", "17": "🌤️"}
+ICONOS_GRUPO_CIELO = {"2": "🌧️", "3": "🌨️", "4": "🌦️", "5": "⛈️", "6": "⛈️", "7": "🌨️", "8": "🌫️"}
+
+
+def icono_cielo(codigo):
+    codigo = str(codigo or "").rstrip("n")
+    if codigo in ICONOS_CIELO:
+        return ICONOS_CIELO[codigo]
+    return ICONOS_GRUPO_CIELO.get(codigo[:1], "🌡️")
+
+
+def construir_tarjetas_pronostico(df):
+    """Una tarjeta por día de la predicción: estado del cielo, máxima y
+    mínima, probabilidad de lluvia y viento. En pantallas estrechas cada
+    tarjeta se convierte en una fila."""
+    if df.empty:
+        return ""
+    hoy = pd.Timestamp(datetime.now(ZONA_HORARIA).date())
+    tarjetas = []
+    for fila in df.itertuples():
+        dias = (fila.fecha - hoy).days
+        nombre = "Hoy" if dias == 0 else "Mañana" if dias == 1 else f"{DIAS_SEMANA[fila.fecha.weekday()].capitalize()} {fila.fecha.day}"
+        texto_cielo = html.escape(str(getattr(fila, "cielo_texto", "") or ""))
+        icono = icono_cielo(getattr(fila, "cielo", None))
+        temps = " / ".join(
+            f'<span class="{clase}">{v:.0f}°</span>'
+            for v, clase in ((fila.tmax, "t-max"), (fila.tmin, "t-min")) if pd.notna(v)
+        )
+        lluvia = f"💧 {fila.prob_precip:.0f} %" if pd.notna(fila.prob_precip) else ""
+        viento = ""
+        if pd.notna(getattr(fila, "viento_max", None)):
+            direccion = getattr(fila, "viento_dir", None)
+            viento = f"💨 {fila.viento_max:.0f} km/h" + (f" {html.escape(str(direccion))}" if direccion and direccion != "C" else "")
+        tarjetas.append(
+            f'<div class="dia-pronostico">'
+            f'<p class="dia-nombre">{nombre}</p>'
+            f'<p class="dia-icono" role="img" aria-label="{texto_cielo or "estado del cielo"}">{icono}</p>'
+            f'<p class="dia-cielo">{texto_cielo}</p>'
+            f'<p class="dia-temps">{temps}</p>'
+            f'<p class="dia-detalle">{lluvia}</p>'
+            f'<p class="dia-detalle">{viento}</p>'
+            f"</div>"
+        )
+    return f'<div class="dias-pronostico">{"".join(tarjetas)}</div>'
+
+
 def construir_graficos_prediccion(df):
     """Devuelve una lista de fragmentos HTML, uno por variable (temperatura,
     probabilidad de precipitación, viento, humedad), cada uno a ancho
@@ -1120,10 +1214,11 @@ def construir_graficos_prediccion(df):
         return ['<p class="aviso">No se pudo cargar la predicción en esta ejecución.</p>']
 
     graficos = []
-    config = {"responsive": True}
+    config = CONFIG_PLOTLY
     layout_comun = dict(template="plotly_white", height=320, margin=dict(t=50, b=40, l=50, r=20))
 
     def lineas_de_dia(fig):
+        fig.update_xaxes(tickformat="%a %-d", hoverformat="%A %-d de %B")
         for fecha in df["fecha"]:
             fig.add_vline(x=fecha, line_width=1, line_dash="dot", line_color=MATERIAL["gris"], opacity=0.3)
 
@@ -1299,6 +1394,9 @@ def _sector_viento(grados):
     return SECTORES_VIENTO[int(((grados % 360) + 22.5) // 45) % 8]
 
 
+HORAS_OBSERVACION_ANTIGUA = 3
+
+
 def construir_tarjetas_kpi(lectura, mar=None):
     """Tarjetas destacadas con las condiciones observadas más recientes:
     temperatura, viento, humedad y precipitación de la última hora, y la
@@ -1308,15 +1406,23 @@ def construir_tarjetas_kpi(lectura, mar=None):
         return ""
     lectura = lectura or {}
 
-    hora = lectura.get("fint")
-    if hora:
+    # AEMET da la hora de la observación en UTC; se muestra en hora local.
+    hora, aviso_antiguedad = None, ""
+    if lectura.get("fint"):
         try:
-            hora = datetime.strptime(hora, "%Y-%m-%dT%H:%M:%S").strftime("%H:%M UTC")
+            momento = datetime.strptime(lectura["fint"], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+            hora = _hora_local(momento, "%d/%m a las %H:%M")
+            horas = (datetime.now(timezone.utc) - momento).total_seconds() / 3600
+            if horas > HORAS_OBSERVACION_ANTIGUA:
+                aviso_antiguedad = (
+                    f'<p class="aviso aviso-antiguo">⚠ La última observación de la estación es de hace '
+                    f"{horas:.0f} horas: los valores de «ahora» pueden no reflejar el tiempo actual.</p>"
+                )
         except ValueError:
-            pass
+            hora = lectura["fint"]
 
     def fmt(valor, unidad, decimales=1):
-        return f"{valor:.{decimales}f} {unidad}" if valor is not None else "sin datos"
+        return f"{_es(valor, decimales)} {unidad}" if valor is not None else "sin datos"
 
     vv = lectura.get("vv")
     viento_kmh = vv * 3.6 if vv is not None else None
@@ -1351,7 +1457,7 @@ def construir_tarjetas_kpi(lectura, mar=None):
     if mar:
         detalle_mar = ""
         if mar.get("hace_semana") is not None:
-            detalle_mar = f"hace una semana {mar['hace_semana']:.1f} °C"
+            detalle_mar = f"hace una semana {_es(mar['hace_semana'])} °C"
         kpis.append(("Temperatura del mar", MATERIAL["azul"], fmt(mar["ahora"], "°C"), detalle_mar))
 
     tarjetas = "".join(
@@ -1362,11 +1468,11 @@ def construir_tarjetas_kpi(lectura, mar=None):
         + "</div>"
         for etiqueta, color, valor, detalle in kpis
     )
-    nota_hora = f"Última observación: {hora}." if hora else ""
+    nota_hora = f"Última observación: {hora} (hora local)." if hora else ""
     if mar:
         nota_hora += " Mar: análisis del modelo de Copernicus (vía Open-Meteo) frente a la costa, no una medición."
     nota_hora = f'<p class="aviso">{nota_hora.strip()}</p>' if nota_hora else ""
-    return f'<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
+    return f'{aviso_antiguedad}<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
 
 
 #: (etiqueta, color, columna para el valor máximo, columna para el valor
@@ -1504,7 +1610,7 @@ def construir_tarjetas_anomalia(mes_completo, normales_registros, periodo=None):
         diferencia = valor_real - valor_normal
         signo = "+" if diferencia >= 0 else ""
         referencia = "mediana" if estadistico == "mn" else "normal"
-        texto_diferencia = f"{signo}{diferencia:.{decimales}f} {unidad} vs. {referencia}"
+        texto_diferencia = f"{signo}{_es(diferencia, decimales)} {unidad} vs. {referencia}"
         if porcentaje and valor_normal > 0:
             texto_diferencia += f" ({100 * valor_real / valor_normal:.0f} % de la {referencia})"
         # Años con dato en la serie de referencia: no todas las variables
@@ -1512,7 +1618,7 @@ def construir_tarjetas_anomalia(mes_completo, normales_registros, periodo=None):
         anios = _num(normal.get(f"{prefijo}_n"))
         filas.append((
             etiqueta, color,
-            f"{valor_real:.{decimales}f} {unidad}",
+            f"{_es(valor_real, decimales)} {unidad}",
             texto_diferencia,
             clasificar(valor_real, normal, prefijo, clases),
             f"{anios:.0f} años de referencia" if anios else "",
@@ -1605,7 +1711,7 @@ def construir_dias_senalados(mes_completo, normales_registros):
         if not siempre and dias == 0 and not (valor_normal and valor_normal >= 0.1):
             continue
         faltan = int(df_mes[col].isna().sum())
-        detalle = f"normal: {valor_normal:.1f}" if valor_normal is not None else "sin valor normal en AEMET"
+        detalle = f"normal: {_es(valor_normal)}" if valor_normal is not None else "sin valor normal en AEMET"
         if faltan:
             detalle += f" · {faltan} día(s) sin dato"
         tarjetas.append(
@@ -1690,12 +1796,13 @@ def construir_anio_hidrologico(df_completo, normales_registros):
     fig.update_yaxes(range=_rango_eje(series, 0, 100, 20), title="mm")
     fig.update_layout(
         title="Precipitación acumulada del año hidrológico", hovermode="x unified",
+        xaxis=dict(tickformat="%b %Y", hoverformat="%-d %b %Y"),
         legend=dict(orientation="h", y=-0.25), template="plotly_white", height=360,
         margin=dict(t=50, b=40, l=50, r=20),
     )
     return [
         f'<h3 class="subtitulo">Año hidrológico {nombre_anio}</h3>{resumen}',
-        fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True}),
+        fig.to_html(full_html=False, include_plotlyjs=False, config=CONFIG_PLOTLY),
     ]
 
 
@@ -1740,7 +1847,7 @@ def construir_rosa_vientos(df):
         fig.add_trace(go.Barpolar(
             r=conteo.values, theta=SECTORES_VIENTO, name=etiqueta,
             marker=dict(color=color, line=dict(color="rgba(255,255,255,0.9)", width=1)),
-            customdata=[f"{tmax_media[s]:.1f} °C" if s in tmax_media and pd.notna(tmax_media[s]) else "—" for s in SECTORES_VIENTO],
+            customdata=[f"{_es(tmax_media[s])} °C" if s in tmax_media and pd.notna(tmax_media[s]) else "—" for s in SECTORES_VIENTO],
             hovertemplate="%{theta}: %{r} día(s) con racha " + etiqueta + "<br>Máx. media de los días de este sector: %{customdata}<extra></extra>",
         ))
     fig.update_layout(
@@ -1756,7 +1863,7 @@ def construir_rosa_vientos(df):
     variable = int((pd.to_numeric(df["dir"], errors="coerce") == 99).sum())
     nota = f" {variable} día(s) con dirección variable no aparecen en la rosa." if variable else ""
     return (
-        fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
+        fig.to_html(full_html=False, include_plotlyjs=False, config=CONFIG_PLOTLY)
         + f'<p class="aviso">Cada día cuenta una vez, en el sector desde el que sopló su racha más fuerte.{nota}</p>'
     )
 
@@ -1813,9 +1920,9 @@ def notas_records(df, extremos, prevision=False):
             unidad = record["unidad"]
             notas.append((
                 fecha, resultado,
-                f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha:%d/%m}: {nombre} de {valor:.1f} {unidad}"
+                f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha:%d/%m}: {nombre} de {_es(valor)} {unidad}"
                 f"{' prevista' if prevision and clave != 'prec' else ''}, {texto} {NOMBRES_MES[fecha.month]} "
-                f"({record['valor']:.1f} {unidad}{', ' + fecha_record if fecha_record else ''})",
+                f"({_es(record['valor'])} {unidad}{', ' + fecha_record if fecha_record else ''})",
             ))
     notas.sort(key=lambda n: (n[1] != "supera", -n[0].value))
     return [texto for _, _, texto in notas[:6]]
@@ -1837,7 +1944,7 @@ def construir_records(extremos, df_hist, mes):
         tarjetas.append(
             f'<div class="tarjeta" style="border-top-color:{colores[clave]};">'
             f"<h3>{etiqueta}</h3>"
-            f'<p class="valor-dias">{record["valor"]:.1f} {record["unidad"]}</p>'
+            f'<p class="valor-dias">{_es(record["valor"])} {record["unidad"]}</p>'
             f"<p class='fecha'>{_fecha_record(record, mes)}</p>"
             f"</div>"
         )
@@ -1862,8 +1969,8 @@ def construir_recuadro_extremos(df, variables):
     for etiqueta, color, col_max, col_min, unidad in variables:
         alto = _extremo(df, col_max, "max")
         bajo = _extremo(df, col_min, "min")
-        alto_html = f"{alto[0]:.1f} {unidad} <span class='fecha'>({alto[1]})</span>" if alto else "sin datos"
-        bajo_html = f"{bajo[0]:.1f} {unidad} <span class='fecha'>({bajo[1]})</span>" if bajo else "sin datos"
+        alto_html = f"{_es(alto[0])} {unidad} <span class='fecha'>({alto[1]})</span>" if alto else "sin datos"
+        bajo_html = f"{_es(bajo[0])} {unidad} <span class='fecha'>({bajo[1]})</span>" if bajo else "sin datos"
         tarjetas.append(
             f'<div class="tarjeta" style="border-top-color:{color};">'
             f"<h3>{etiqueta}</h3>"
@@ -1878,7 +1985,8 @@ def main():
     os.makedirs("docs", exist_ok=True)
     bloques_html = []
     estaciones_menu = []
-    generado = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    temperaturas_ahora = {}  # para mostrarlas en los marcadores del mapa
+    generado = _hora_local(datetime.now(timezone.utc), "%d/%m/%Y a las %H:%M (hora peninsular)")
 
     avisos_por_area = {}  # se descargan una sola vez por área, aunque la compartan varias estaciones
     mar_por_punto = {}  # ídem para la temperatura del mar
@@ -2029,6 +2137,7 @@ def main():
 
         slug = _slug(nombre)
         estaciones_menu.append((slug, nombre, estacion.get("lat"), estacion.get("lon")))
+        temperaturas_ahora[slug] = (lectura_actual or {}).get("ta")
         seccion = [f'<section class="estacion" data-estacion="{slug}"><h2>{html.escape(nombre)}</h2>']
         seccion.append(banner_avisos)
         if notas_antiguedad:
@@ -2051,15 +2160,17 @@ def main():
             )
         graficos_horas = construir_graficos_horarios(df_horas, noches)
         if graficos_horas:
-            seccion.append('<details class="bloque-horario" open><summary class="subtitulo">Próximas 48 horas</summary>')
+            seccion.append('<details class="bloque-plegable" open><summary class="subtitulo">Próximas 48 horas</summary>')
             seccion.append('<div class="graficos-apilados">')
             seccion.extend(graficos_horas)
             seccion.append('</div>')
             seccion.append('<p class="aviso">La franja sombreada es la noche.</p></details>')
         seccion.append('<h3 class="subtitulo">Pronóstico (7 días)</h3>')
+        seccion.append(construir_tarjetas_pronostico(df_pred))
+        seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Gráficos de los 7 días</summary>')
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_prediccion(df_pred))
-        seccion.append('</div>')
+        seccion.append('</div></details>')
         seccion.append('</div>')
 
         seccion.append('<h3 class="subtitulo">Histórico</h3>')
@@ -2094,7 +2205,8 @@ def main():
     if estaciones_con_coordenadas:
         mapa_html = '<div id="mapa-estaciones" class="mapa-estaciones"></div>'
     datos_mapa_js = json.dumps([
-        {"slug": slug, "nombre": nombre, "lat": lat, "lon": lon}
+        {"slug": slug, "nombre": nombre, "lat": lat, "lon": lon,
+         "temp": f"{_es(temperaturas_ahora[slug])} °C" if temperaturas_ahora.get(slug) is not None else None}
         for slug, nombre, lat, lon in estaciones_con_coordenadas
     ], ensure_ascii=False)
 
@@ -2113,12 +2225,17 @@ def main():
 </script>
 <title>Dashboard AEMET</title>
 <link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#3F51B5">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="AEMET Dashboard">
 <script src="{PLOTLY_JS_URL}"></script>
+<script>if (window.Plotly) {{ {LOCALE_ES_JS} }}</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
@@ -2187,8 +2304,18 @@ h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-botto
 .tarjeta-dias {{ flex-basis: 170px; }}
 .notas-records {{ margin: 0.25rem 0 1rem; padding-left: 1.25rem; font-size: 0.9rem; }}
 .notas-records li {{ margin: 0.2rem 0; }}
-.bloque-horario {{ margin-bottom: 1rem; }}
-.bloque-horario > summary {{ cursor: pointer; margin: 0 0 0.5rem; }}
+.bloque-plegable {{ margin-bottom: 1rem; }}
+.bloque-plegable > summary {{ cursor: pointer; margin: 0 0 0.5rem; }}
+.dias-pronostico {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 0.5rem; margin: 0.5rem 0 1rem; }}
+.dia-pronostico {{ background: var(--superficie); border-radius: 8px; padding: 0.6rem 0.4rem; text-align: center; box-shadow: 0 1px 3px var(--sombra); }}
+.dia-pronostico p {{ margin: 0.15rem 0; }}
+.dia-nombre {{ font-weight: 500; }}
+.dia-icono {{ font-size: 2rem; line-height: 1.2; }}
+.dia-cielo {{ font-size: 0.75rem; color: var(--texto-secundario); min-height: 2em; }}
+.dia-temps {{ font-size: 1.05rem; }}
+.t-max {{ font-weight: 700; }}
+.t-min {{ color: var(--texto-secundario); }}
+.dia-detalle {{ font-size: 0.8rem; color: var(--texto-secundario); }}
 .leyenda-uv {{ display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }}
 .uv-cat {{ display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }}
 .uv-muestra {{ width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }}
@@ -2222,6 +2349,14 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
     .bloque-pronostico {{ padding: 0.75rem 0.75rem 0.25rem; }}
     .tarjeta, .tarjeta-kpi {{ flex-basis: 100%; }}
     .mapa-estaciones {{ height: 240px; }}
+    .dias-pronostico {{ grid-template-columns: 1fr; gap: 0.35rem; }}
+    .dia-pronostico {{ display: grid; grid-template-columns: 4.5rem 2.2rem 1fr auto; grid-template-areas: "nombre icono cielo temps" "nombre icono detalle detalle2"; align-items: center; text-align: left; column-gap: 0.5rem; padding: 0.4rem 0.7rem; }}
+    .dia-nombre {{ grid-area: nombre; }}
+    .dia-icono {{ grid-area: icono; font-size: 1.6rem; }}
+    .dia-cielo {{ grid-area: cielo; min-height: 0; }}
+    .dia-temps {{ grid-area: temps; text-align: right; }}
+    .dia-detalle:nth-of-type(5) {{ grid-area: detalle; }}
+    .dia-detalle:nth-of-type(6) {{ grid-area: detalle2; text-align: right; }}
 }}
 </style>
 </head>
@@ -2259,7 +2394,7 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
         var c = coloresGrafico(tema);
         document.querySelectorAll('.plotly-graph-div').forEach(function(div) {{
             if (!div.layout) return;
-            var actualizacion = {{ paper_bgcolor: c.fondo, plot_bgcolor: c.fondo, 'font.color': c.texto }};
+            var actualizacion = {{ paper_bgcolor: c.fondo, plot_bgcolor: c.fondo, 'font.color': c.texto, separators: ',.' }};
             Object.keys(div.layout).forEach(function(clave) {{
                 if (/^(xaxis|yaxis)\\d*$/.test(clave)) {{
                     actualizacion[clave + '.gridcolor'] = c.rejilla;
@@ -2313,6 +2448,7 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
         try {{ localStorage.setItem('tema-aemet', nuevo); }} catch (e) {{}}
         actualizarBoton(nuevo);
         actualizarGraficos(nuevo);
+        document.dispatchEvent(new CustomEvent('cambio-tema', {{ detail: nuevo }}));
     }});
 }})();
 
@@ -2358,14 +2494,28 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
     if (!estaciones.length) return;
 
     var mapa = L.map('mapa-estaciones');
-    L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
-    }}).addTo(mapa);
+    // Teselas claras u oscuras (CARTO) según el tema de la página.
+    var atribucion = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+    var capas = {{
+        light: L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{ attribution: atribucion, maxZoom: 19 }}),
+        dark: L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{ attribution: atribucion, maxZoom: 19 }}),
+    }};
+    var capaActual = null;
+    function ponerCapa(tema) {{
+        var nueva = capas[tema === 'dark' ? 'dark' : 'light'];
+        if (nueva === capaActual) return;
+        if (capaActual) mapa.removeLayer(capaActual);
+        capaActual = nueva.addTo(mapa);
+    }}
+    ponerCapa(document.documentElement.getAttribute('data-theme'));
+    document.addEventListener('cambio-tema', function(e) {{ ponerCapa(e.detail); }});
 
     var grupo = L.featureGroup();
     estaciones.forEach(function(est) {{
         var marcador = L.marker([est.lat, est.lon]).bindPopup(est.nombre);
+        if (est.temp) {{
+            marcador.bindTooltip(est.nombre + ': ' + est.temp, {{ permanent: true, direction: 'top', offset: [-15, -12] }});
+        }}
         marcador.on('click', function() {{
             var selector = document.getElementById('selector-estacion');
             if (!selector) return;
@@ -2387,7 +2537,7 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
 }})();
 
 // Al desplegar un bloque plegable, los gráficos de dentro recalculan su tamaño.
-document.querySelectorAll('details.bloque-horario').forEach(function(bloque) {{
+document.querySelectorAll('details.bloque-plegable').forEach(function(bloque) {{
     bloque.addEventListener('toggle', function() {{
         if (!bloque.open || !window.Plotly) return;
         bloque.querySelectorAll('.plotly-graph-div').forEach(function(div) {{ Plotly.Plots.resize(div); }});

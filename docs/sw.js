@@ -4,10 +4,10 @@
 // devuelve la última copia guardada en caché como reserva.
 //
 // Solo se guardan en caché la propia página y las librerías que necesita
-// (Plotly, Leaflet). Las teselas del mapa no se guardan: son miles de
+// (Plotly, Leaflet, tipografía). Las teselas del mapa no se guardan: son miles de
 // imágenes y harían crecer la caché sin límite.
 
-const CACHE_NAME = "aemet-dashboard-v2";
+const CACHE_NAME = "aemet-dashboard-v3";
 const URLS_NUCLEO = [
   "./",
   "./index.html",
@@ -15,7 +15,7 @@ const URLS_NUCLEO = [
   "./icon-192.png",
   "./icon-512.png",
 ];
-const ORIGENES_LIBRERIAS = ["https://cdn.plot.ly", "https://unpkg.com"];
+const ORIGENES_LIBRERIAS = ["https://cdn.plot.ly", "https://unpkg.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com"];
 
 function seGuarda(url) {
   return url.origin === self.location.origin || ORIGENES_LIBRERIAS.includes(url.origin);
