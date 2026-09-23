@@ -220,7 +220,12 @@ def obtener_normales(idema):
     if os.path.exists(ruta):
         try:
             with open(ruta, encoding="utf-8") as f:
-                return json.load(f)
+                registros_cache = json.load(f)
+            print(
+                f"Normales de {idema} leídos de caché: {len(registros_cache)} registro(s). "
+                f"Ejemplo de 'fecha' guardada: {[r.get('fecha') for r in registros_cache[:3]]}"
+            )
+            return registros_cache
         except (json.JSONDecodeError, OSError) as exc:
             print(f"Aviso: no se pudo leer la caché de normales {ruta}, se vuelve a descargar: {exc}")
 
@@ -228,6 +233,10 @@ def obtener_normales(idema):
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(ruta, "w", encoding="utf-8") as f:
         json.dump(registros, f, ensure_ascii=False, indent=0)
+    print(
+        f"Normales descargados para {idema}: {len(registros)} registro(s). "
+        f"Ejemplo de 'fecha' recibida: {[r.get('fecha') for r in registros[:3]]}"
+    )
     return registros
 
 
@@ -550,15 +559,23 @@ def construir_tarjetas_anomalia(df_hist, normales_registros):
     frente a los valores climatológicos normales (media histórica de largo
     plazo) de ese mismo mes."""
     if df_hist.empty or not normales_registros:
+        print(f"Diagnóstico anomalía: df_hist vacío={df_hist.empty}, normales vacíos={not normales_registros}")
         return ""
 
     resultado = _mes_completo_mas_reciente(df_hist)
     if not resultado:
+        print("Diagnóstico anomalía: no se encontró ningún mes calendario completo en el histórico.")
         return ""
     anio, mes, df_mes = resultado
 
-    normal = normales_por_mes(normales_registros).get(mes)
+    meses_disponibles = normales_por_mes(normales_registros)
+    normal = meses_disponibles.get(mes)
     if not normal:
+        print(
+            f"Diagnóstico anomalía: se buscaba el mes {mes} ({NOMBRES_MES[mes]}) pero no está entre los "
+            f"meses reconocidos en los normales: {sorted(meses_disponibles.keys())}. "
+            f"Fechas 'fecha' originales recibidas: {[r.get('fecha') for r in normales_registros]}"
+        )
         return ""
 
     filas = []
