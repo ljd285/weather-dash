@@ -6,13 +6,16 @@ Dashboard HTML que muestra, para una estación (por defecto Valencia):
 - **Ahora**: última observación de la estación (temperatura, viento, humedad, precipitación).
 - **Predicción**: temperatura, probabilidad de precipitación, viento y humedad a 7 días.
 - **Histórico**: temperatura (sobre la banda de valores normales), precipitación, viento y humedad de los últimos 90 días.
-- **Comparación con lo normal**: el último mes completo frente a los valores normales 1991–2020 de la estación, clasificado como hace AEMET (frío/normal/cálido, seco/normal/húmedo…).
+- **Comparación con lo normal**: el último mes completo frente a los valores normales de la estación (el periodo de referencia se lee de los metadatos de AEMET), clasificado como hace AEMET (frío/normal/cálido, seco/normal/húmedo…).
 - **Días señalados** del último mes completo (días de calor, noches tropicales y tórridas, días de lluvia, rachas fuertes…) junto a lo normal.
 - **Viento**: dirección y racha en la observación actual, y rosa de los vientos con la dirección de la racha máxima de cada día.
 - **Año hidrológico**: lluvia acumulada desde el 1 de octubre frente a la acumulada normal a la misma fecha.
 - **Lluvia intensa**: intensidad máxima diaria (mm/h) con los umbrales de AEMET de lluvia fuerte, muy fuerte y torrencial.
 - **Presión y horas de sol**: evolución diaria frente a sus valores normales.
 - **Confort**: sensación térmica y punto de rocío en la observación actual, sensación térmica e índice UV (categorías de la OMS) en la predicción.
+- **Próximas 48 horas**: temperatura y sensación, precipitación, probabilidad de lluvia y de tormenta, y viento hora a hora, con la noche sombreada.
+- **Récords de la estación** para el mes en curso (máxima, mínima y lluvia en un día), y avisos cuando un día reciente o previsto los supera o se queda cerca.
+- **Temperatura del mar** frente a la costa (modelo de Copernicus vía Open-Meteo; se configura con el campo `mar` de `config.py`).
 
 Todo se ejecuta en la nube (GitHub Actions), sin instalar nada en tu ordenador.
 Se puede prototipar antes en Google Colab si quieres ver los datos sin montar aún la automatización.
@@ -105,5 +108,6 @@ El script genera un bloque de gráficos por cada estación de la lista, todos en
 - Los datos climatológicos diarios (histórico) y la predicción por municipios son dos APIs distintas de AEMET; por eso la estación (`idema`) y el municipio (`municipio`) se configuran por separado, aunque sea la misma ciudad.
 - Para la lluvia del año hidrológico, el histórico se descarga desde el 1 de octubre (aunque los gráficos solo muestran los últimos `DIAS_HISTORICO` días). La primera ejecución tras este cambio descarga esos meses de una vez; las siguientes solo piden los días nuevos.
 - El histórico diario se guarda en `data/historico_<idema>.json` (y los normales en `data/normales_<idema>.json`), que el workflow sube al repositorio. En cada ejecución solo se piden a AEMET los días que falten en la ventana, incluidos los huecos que hubieran quedado de descargas anteriores.
+- Los récords se guardan en `data/extremos_<idema>.json` y se renuevan cada 30 días. El periodo de referencia de los normales se lee una vez de los metadatos de AEMET y se guarda en `data/normales_<idema>_metadatos.json`.
 - La última predicción y la última observación descargadas con éxito se guardan en `data/ultimo/` (fuera del repositorio; el workflow las conserva con `actions/cache`). Si AEMET falla en una ejecución, la página muestra esas copias con un aviso de su antigüedad en vez de quedarse vacía.
 - Las versiones de `requirements.txt` están fijadas y la página carga la versión de plotly.js que corresponde al paquete de Python instalado. Al actualizar Plotly, comprueba que los gráficos se siguen viendo bien.

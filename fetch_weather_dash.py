@@ -72,13 +72,15 @@ class SinDatosAEMET(Exception):
     (su campo 'estado' vale 404)."""
 
 
-def aemet_get(endpoint, retries=5, binario=False):
+def aemet_get(endpoint, retries=5, binario=False, metadatos=False):
     """Llama a un endpoint de AEMET.
 
     AEMET responde primero con un JSON pequeño que contiene la URL real de
     los datos (campo 'datos'), así que hace falta una segunda petición para
     obtener el contenido de verdad. Con `binario=True` se devuelven los bytes
     tal cual (p. ej. el .tar de los avisos) en vez de interpretarlos como JSON.
+    Con `metadatos=True` se devuelve la descripción de los datos (campo
+    'metadatos') en vez de los datos: unidades, periodo de referencia, etc.
 
     AEMET limita las peticiones por minuto con la misma clave (HTTP 429).
     Si se supera el límite, se espera cada vez más tiempo antes de
@@ -99,7 +101,7 @@ def aemet_get(endpoint, retries=5, binario=False):
             raise SinDatosAEMET(meta.get("descripcion", "sin datos"))
         if meta.get("estado") != 200:
             raise RuntimeError(f"AEMET devolvió un error: {meta}")
-        data_resp = requests.get(meta["datos"], timeout=30)
+        data_resp = requests.get(meta["metadatos" if metadatos else "datos"], timeout=30)
         data_resp.raise_for_status()
         if binario:
             return data_resp.content
@@ -246,6 +248,12 @@ def obtener_prediccion(municipio):
     return data[0]
 
 
+def obtener_prediccion_horaria(municipio):
+    """Descarga la predicción horaria (hoy, mañana y pasado) de un municipio."""
+    data = aemet_get(f"/prediccion/especifica/municipio/horaria/{municipio}")
+    return data[0]
+
+
 def obtener_observacion_actual(idema_obs):
     """Descarga las lecturas recientes (última jornada) de una estación
     automática de observación y devuelve la más reciente (AEMET las da
@@ -279,6 +287,123 @@ def obtener_normales(idema):
     return registros
 
 
+def periodo_normales(idema):
+    """Periodo de referencia de los valores normales (p. ej. "1981–2010"),
+    leído de los metadatos que AEMET publica junto a los datos, o None si no
+    se puede saber. No se da por hecho: la web de AEMET usa ya 1991–2020,
+    pero la descripción de este servicio de OpenData hablaba de 1981–2010.
+    Los metadatos se guardan en caché permanente, como los normales."""
+    ruta = os.path.join(CACHE_DIR, f"normales_{idema}_metadatos.json")
+    metadatos = None
+    if os.path.exists(ruta):
+        try:
+            with open(ruta, encoding="utf-8") as f:
+                metadatos = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            metadatos = None
+    if metadatos is None:
+        try:
+            metadatos = aemet_get(f"/valores/climatologicos/normales/estacion/{idema}", metadatos=True)
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump(metadatos, f, ensure_ascii=False, indent=0)
+        except Exception as exc:
+            print(f"Aviso: no se pudieron obtener los metadatos de los normales de {idema}: {exc}")
+            return None
+    texto = json.dumps(metadatos, ensure_ascii=False)
+    encontrado = re.search(r"\b(19\d\d|20\d\d)\s*(?:-|–|/|a|al|y)\s*(19\d\d|20\d\d)\b", texto)
+    if not encontrado or int(encontrado.group(2)) - int(encontrado.group(1)) < 10:
+        print(f"Diagnóstico normales: no se encontró el periodo en los metadatos de {idema}: {texto[:500]}")
+        return None
+    periodo = f"{encontrado.group(1)}–{encontrado.group(2)}"
+    print(f"Periodo de los normales de {idema}: {periodo}.")
+    return periodo
+
+
+# --- Récords de la estación (valores extremos) ---------------------------
+
+DIAS_REFRESCO_EXTREMOS = 30  # los récords pueden batirse: se renuevan cada mes
+
+#: Por parámetro de AEMET (T temperatura, P precipitación): los récords
+#: que se muestran, como (clave interna, campo del valor, campo del día,
+#: campo del año, unidad). Los nombres de campo son los que usa AEMET en esta
+#: respuesta; si alguno no llega, ese récord se omite y el log lo indica.
+#: El viento no se incluye: AEMET no deja claro en qué unidad da su récord
+#: y un récord con la unidad equivocada sería peor que no mostrarlo.
+CAMPOS_EXTREMOS = {
+    "T": [
+        ("tmax", "temMax", "diaMax", "anioMax", "°C"),
+        ("tmin", "temMin", "diaMin", "anioMin", "°C"),
+    ],
+    "P": [
+        ("prec", "precMaxDia", "diaMaxDia", "anioMaxDia", "mm"),
+    ],
+}
+
+
+def obtener_extremos(idema):
+    """Descarga los valores extremos (récords) de temperatura, precipitación
+    y viento de la estación y los devuelve como
+    {clave: [ {valor, dia, anio} por mes 1..12 ]}. Caché en
+    data/extremos_<idema>.json, renovada cada DIAS_REFRESCO_EXTREMOS días."""
+    ruta = os.path.join(CACHE_DIR, f"extremos_{idema}.json")
+    crudos = {}
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            guardado = json.load(f)
+        edad = datetime.now(timezone.utc) - datetime.fromisoformat(guardado["guardado"])
+        if edad < timedelta(days=DIAS_REFRESCO_EXTREMOS):
+            crudos = guardado["datos"]
+    except (OSError, json.JSONDecodeError, KeyError, ValueError):
+        pass
+
+    if not crudos:
+        for parametro in CAMPOS_EXTREMOS:
+            try:
+                datos = aemet_get(f"/valores/climatologicos/valoresextremos/parametro/{parametro}/estacion/{idema}")
+                crudos[parametro] = datos[0] if isinstance(datos, list) else datos
+            except Exception as exc:
+                print(f"Aviso: no se pudieron obtener los extremos '{parametro}' de {idema}: {exc}")
+            time.sleep(2)
+        if crudos:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(ruta, "w", encoding="utf-8") as f:
+                json.dump({"guardado": datetime.now(timezone.utc).isoformat(), "datos": crudos}, f, ensure_ascii=False, indent=0)
+    return extremos_por_mes(crudos)
+
+
+def extremos_por_mes(crudos):
+    """Interpreta la respuesta de valores extremos de AEMET: listas de 13
+    valores (12 meses + el anual) por campo. AEMET da las cifras en décimas
+    (de °C o de mm). Se comprueba con la temperatura, que en décimas siempre
+    tiene algún valor por encima de 60; la precipitación sigue el mismo
+    criterio (o, sin temperatura, se toma en décimas si pasa de 1000)."""
+    en_decimas = None
+    resultado = {}
+    for parametro, campos in CAMPOS_EXTREMOS.items():
+        datos = crudos.get(parametro) or {}
+        if not datos:
+            continue
+        for clave, c_valor, c_dia, c_anio, unidad in campos:
+            valores, dias, anios = datos.get(c_valor), datos.get(c_dia), datos.get(c_anio)
+            if not all(isinstance(x, list) and len(x) >= 12 for x in (valores, dias, anios)):
+                print(f"Diagnóstico extremos: falta '{c_valor}'/'{c_dia}'/'{c_anio}' en '{parametro}'. Campos recibidos: {sorted(datos.keys())}")
+                continue
+            numeros = [_num(v) for v in valores[:12]]
+            validos = [abs(v) for v in numeros if v is not None]
+            if not validos:
+                continue
+            if parametro == "T" and en_decimas is None:
+                en_decimas = max(validos) > 60
+            decimas = en_decimas if en_decimas is not None else max(validos) > 1000
+            escala = 10 if decimas else 1
+            resultado[clave] = [
+                {"valor": v / escala if v is not None else None, "dia": _num(d), "anio": _num(a), "unidad": unidad}
+                for v, d, a in zip(numeros, dias[:12], anios[:12])
+            ]
+    return resultado
+
+
 # Última predicción y última observación descargadas con éxito. Si en una
 # ejecución AEMET falla, se muestran estas (avisando de su antigüedad) en
 # vez de publicar la página sin datos. No se suben al repositorio (ver
@@ -308,6 +433,40 @@ def _leer_ultimo(clave):
 
 def _hora_local(momento, formato="%d/%m %H:%M"):
     return momento.astimezone(ZONA_HORARIA).strftime(formato)
+
+
+# --- Temperatura del mar --------------------------------------------------
+
+URL_MAR = "https://marine-api.open-meteo.com/v1/marine"
+
+
+def obtener_temperatura_mar(lat, lon):
+    """Temperatura superficial del mar (°C) en un punto frente a la costa,
+    de los análisis del servicio marino de Copernicus que distribuye
+    Open-Meteo (gratuito, sin clave). Es un valor de modelo, no de una boya.
+    Devuelve {"ahora": °C, "hace_semana": °C o None, "hora": datetime}."""
+    resp = requests.get(URL_MAR, params={
+        "latitude": lat, "longitude": lon, "hourly": "sea_surface_temperature",
+        "past_days": 7, "forecast_days": 1, "timezone": "Europe/Madrid",
+    }, timeout=30)
+    resp.raise_for_status()
+    horario = resp.json().get("hourly", {})
+    serie = pd.Series(
+        pd.to_numeric(pd.Series(horario.get("sea_surface_temperature", [])), errors="coerce").values,
+        index=pd.to_datetime(horario.get("time", [])),
+    ).dropna()
+    if serie.empty:
+        raise ValueError(f"respuesta sin temperatura del mar: {list(horario.keys())}")
+    ahora = pd.Timestamp(datetime.now(ZONA_HORARIA).replace(tzinfo=None))
+    pasado = serie[serie.index <= ahora]
+    actual = pasado if not pasado.empty else serie
+    hora = actual.index[-1]
+    semana = serie[serie.index <= hora - pd.Timedelta(days=7)]
+    return {
+        "ahora": float(actual.iloc[-1]),
+        "hace_semana": float(semana.iloc[-1]) if not semana.empty else None,
+        "hora": hora.isoformat(),
+    }
 
 
 # --- Avisos meteorológicos (Meteoalerta) --------------------------------
@@ -648,7 +807,7 @@ def construir_graficos_historico(df, normales_registros=None):
     layout_comun = dict(template="plotly_white", height=360, margin=dict(t=70, b=40, l=50, r=20))
 
     # Temperatura, sobre la banda normal (media de las máximas y de las
-    # mínimas de 1991–2020 para cada época del año). Un día por encima o por
+    # mínimas del periodo de referencia para cada época del año). Un día por encima o por
     # debajo de la banda se ve de un vistazo como cálido o frío.
     fig = go.Figure()
     series_rango = [df["tmax"], df["tmin"]]
@@ -805,6 +964,148 @@ def _grafico_intensidad_lluvia(df, config, layout_comun):
         + '<p class="aviso">Lluvia de los 10 minutos más intensos de cada día, en mm/h. Según AEMET, '
         'la lluvia es fuerte por encima de 15 mm/h, muy fuerte por encima de 30 y torrencial por encima de 60.</p>'
     )
+
+
+HORAS_PREDICCION_HORARIA = 48
+
+
+def _por_hora(lista):
+    """{hora: valor} de una lista de AEMET con periodos de una hora ("08")."""
+    resultado = {}
+    for item in lista or []:
+        periodo = str(item.get("periodo", ""))
+        if len(periodo) == 2 and periodo.isdigit() and "value" in item:
+            resultado[int(periodo)] = item["value"]
+    return resultado
+
+
+def _por_tramo(lista, hora):
+    """Valor del tramo de varias horas ("0814" = de 8 a 14) que contiene `hora`."""
+    for item in lista or []:
+        periodo = str(item.get("periodo", ""))
+        if len(periodo) == 4 and periodo.isdigit():
+            inicio, fin = int(periodo[:2]), int(periodo[2:])
+            dentro = inicio <= hora < fin if inicio < fin else hora >= inicio
+            if dentro:
+                return item.get("value")
+    return None
+
+
+def prediccion_horaria_a_dataframe(prediccion, ahora=None):
+    """Convierte la predicción horaria de AEMET en (DataFrame, noches).
+
+    El DataFrame tiene una fila por hora (hora oficial española) desde la
+    hora actual hasta HORAS_PREDICCION_HORARIA horas después: temperatura,
+    sensación térmica, precipitación (mm), probabilidad de precipitación y
+    de tormenta (%, por tramos de 6 horas), humedad, viento, racha y
+    dirección. `noches` es una lista de (inicio, fin) entre la puesta y la
+    salida del sol, para sombrear la noche en los gráficos."""
+    filas, soles = [], []
+    for dia in prediccion.get("prediccion", {}).get("dia", []):
+        fecha = pd.Timestamp(dia["fecha"][:10])
+        temperatura = _por_hora(dia.get("temperatura"))
+        sensacion = _por_hora(dia.get("sensTermica"))
+        precipitacion = _por_hora(dia.get("precipitacion"))
+        humedad = _por_hora(dia.get("humedadRelativa"))
+        velocidad, direccion, racha = {}, {}, {}
+        for item in dia.get("vientoAndRachaMax") or []:
+            periodo = str(item.get("periodo", ""))
+            if not (len(periodo) == 2 and periodo.isdigit()):
+                continue
+            if "velocidad" in item:
+                velocidad[int(periodo)] = (item.get("velocidad") or [None])[0]
+                direccion[int(periodo)] = (item.get("direccion") or [None])[0]
+            elif "value" in item:
+                racha[int(periodo)] = item["value"]
+        for hora in sorted(temperatura):
+            filas.append({
+                "fecha": fecha + pd.Timedelta(hours=hora),
+                "temp": temperatura.get(hora),
+                "sens": sensacion.get(hora),
+                "prec": precipitacion.get(hora),
+                "prob_precip": _por_tramo(dia.get("probPrecipitacion"), hora),
+                "prob_tormenta": _por_tramo(dia.get("probTormenta"), hora),
+                "hum": humedad.get(hora),
+                "viento": velocidad.get(hora),
+                "racha": racha.get(hora),
+                "dir": direccion.get(hora),
+            })
+        orto, ocaso = dia.get("orto"), dia.get("ocaso")
+        if orto and ocaso and ":" in orto and ":" in ocaso:
+            soles.append((fecha + pd.Timedelta(orto + ":00"), fecha + pd.Timedelta(ocaso + ":00")))
+
+    df = pd.DataFrame(filas)
+    if df.empty:
+        return df, []
+    for col in ["temp", "sens", "prec", "prob_precip", "prob_tormenta", "hum", "viento", "racha"]:
+        # "Ip" = precipitación inapreciable.
+        df[col] = pd.to_numeric(df[col].astype(str).str.replace("Ip", "0", regex=False).str.replace(",", "."), errors="coerce")
+    ahora = ahora or pd.Timestamp(datetime.now(ZONA_HORARIA).replace(tzinfo=None)).floor("h")
+    df = df[(df["fecha"] >= ahora) & (df["fecha"] <= ahora + pd.Timedelta(hours=HORAS_PREDICCION_HORARIA))]
+    df = df.drop_duplicates("fecha").reset_index(drop=True)
+
+    noches = []
+    for (_, ocaso), (orto_siguiente, _) in zip(soles, soles[1:] + [(None, None)]):
+        fin = orto_siguiente if orto_siguiente is not None else ocaso + pd.Timedelta(hours=11)
+        noches.append((ocaso, fin))
+    if soles:
+        noches.insert(0, (soles[0][0].normalize(), soles[0][0]))  # madrugada del primer día
+    return df, noches
+
+
+def construir_graficos_horarios(df, noches):
+    """Gráficos de las próximas 48 horas: temperatura y sensación,
+    precipitación, probabilidad de lluvia y de tormenta, y viento. La noche
+    va sombreada."""
+    if df.empty:
+        return []
+    config = {"responsive": True}
+    layout_comun = dict(template="plotly_white", height=300, margin=dict(t=50, b=40, l=50, r=20), hovermode="x unified")
+    inicio, fin = df["fecha"].min(), df["fecha"].max()
+
+    def preparar(fig, titulo, eje, rango):
+        for ini_noche, fin_noche in noches:
+            if fin_noche > inicio and ini_noche < fin:
+                fig.add_vrect(x0=max(ini_noche, inicio), x1=min(fin_noche, fin), fillcolor=MATERIAL["gris"],
+                              opacity=0.12, line_width=0, layer="below")
+        fig.update_xaxes(range=[inicio, fin], dtick=12 * 3600 * 1000, tick0=inicio.normalize(), tickformat="%H h<br>%d/%m", tickangle=0)
+        fig.update_yaxes(range=rango, title=eje)
+        fig.update_layout(title=titulo, legend=dict(orientation="h", y=-0.3), **layout_comun)
+        return fig.to_html(full_html=False, include_plotlyjs=False, config=config)
+
+    graficos = []
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["fecha"], y=df["temp"], name="Temperatura", line=dict(color=MATERIAL["rojo"], width=2),
+                             hovertemplate="%{y:.0f} °C"))
+    series = [df["temp"]]
+    if ((df["sens"] - df["temp"]).abs() >= 1).any():
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["sens"], name="Sensación térmica",
+                                 line=dict(color="#B71C1C", width=1.5, dash="dot"), hovertemplate="%{y:.0f} °C"))
+        series.append(df["sens"])
+    graficos.append(preparar(fig, "Temperatura por horas", "°C", _rango_eje(series, 10, 35, 2)))
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df["fecha"], y=df["prec"], name="Precipitación", marker_color=MATERIAL["azul"],
+                         hovertemplate="%{y:.1f} mm<extra></extra>"))
+    graficos.append(preparar(fig, "Precipitación por horas", "mm", _rango_eje([df["prec"]], 0, 5, 1)))
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["fecha"], y=df["prob_precip"], name="Prob. de precipitación",
+                             line=dict(color=MATERIAL["azul_claro"], width=2, shape="hv"), hovertemplate="%{y:.0f} %"))
+    if df["prob_tormenta"].fillna(0).gt(0).any():
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["prob_tormenta"], name="Prob. de tormenta",
+                                 line=dict(color=MATERIAL["morado"], width=2, shape="hv"), hovertemplate="%{y:.0f} %"))
+    graficos.append(preparar(fig, "Probabilidad de lluvia y de tormenta", "%", [0, 100]))
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento"], name="Viento", line=dict(color=MATERIAL["indigo"], width=2),
+                             customdata=df["dir"].fillna("—"), hovertemplate="%{y:.0f} km/h del %{customdata}"))
+    if df["racha"].notna().any():
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha"], name="Racha", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot"),
+                                 hovertemplate="%{y:.0f} km/h"))
+    graficos.append(preparar(fig, "Viento por horas", "km/h", _rango_eje([df["viento"], df["racha"]], 0, 40, 5)))
+    return graficos
 
 
 def construir_graficos_prediccion(df):
@@ -998,11 +1299,14 @@ def _sector_viento(grados):
     return SECTORES_VIENTO[int(((grados % 360) + 22.5) // 45) % 8]
 
 
-def construir_tarjetas_kpi(lectura):
+def construir_tarjetas_kpi(lectura, mar=None):
     """Tarjetas destacadas con las condiciones observadas más recientes:
-    temperatura, viento, humedad y precipitación de la última hora."""
-    if not lectura:
+    temperatura, viento, humedad y precipitación de la última hora, y la
+    temperatura del mar si se ha podido obtener (`mar`, ver
+    obtener_temperatura_mar)."""
+    if not lectura and not mar:
         return ""
+    lectura = lectura or {}
 
     hora = lectura.get("fint")
     if hora:
@@ -1044,6 +1348,11 @@ def construir_tarjetas_kpi(lectura):
         ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
         ("Precipitación (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
     ]
+    if mar:
+        detalle_mar = ""
+        if mar.get("hace_semana") is not None:
+            detalle_mar = f"hace una semana {mar['hace_semana']:.1f} °C"
+        kpis.append(("Temperatura del mar", MATERIAL["azul"], fmt(mar["ahora"], "°C"), detalle_mar))
 
     tarjetas = "".join(
         f'<div class="tarjeta-kpi" style="border-top-color:{color};">'
@@ -1053,7 +1362,10 @@ def construir_tarjetas_kpi(lectura):
         + "</div>"
         for etiqueta, color, valor, detalle in kpis
     )
-    nota_hora = f'<p class="aviso">Última observación: {hora}</p>' if hora else ""
+    nota_hora = f"Última observación: {hora}." if hora else ""
+    if mar:
+        nota_hora += " Mar: análisis del modelo de Copernicus (vía Open-Meteo) frente a la costa, no una medición."
+    nota_hora = f'<p class="aviso">{nota_hora.strip()}</p>' if nota_hora else ""
     return f'<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
 
 
@@ -1158,7 +1470,11 @@ def clasificar(valor, normal, prefijo, clases):
     return clases[6]
 
 
-def construir_tarjetas_anomalia(mes_completo, normales_registros):
+def _texto_periodo(periodo):
+    return f"periodo {periodo}" if periodo else "periodo de referencia de AEMET"
+
+
+def construir_tarjetas_anomalia(mes_completo, normales_registros, periodo=None):
     """Compara el último mes calendario completo disponible en el histórico
     (`mes_completo`, resultado de _mes_completo_mas_reciente) frente a los
     valores climatológicos normales de ese mismo mes, y lo clasifica
@@ -1191,11 +1507,15 @@ def construir_tarjetas_anomalia(mes_completo, normales_registros):
         texto_diferencia = f"{signo}{diferencia:.{decimales}f} {unidad} vs. {referencia}"
         if porcentaje and valor_normal > 0:
             texto_diferencia += f" ({100 * valor_real / valor_normal:.0f} % de la {referencia})"
+        # Años con dato en la serie de referencia: no todas las variables
+        # tienen los 30 (p. ej. la humedad suele tener menos).
+        anios = _num(normal.get(f"{prefijo}_n"))
         filas.append((
             etiqueta, color,
             f"{valor_real:.{decimales}f} {unidad}",
             texto_diferencia,
             clasificar(valor_real, normal, prefijo, clases),
+            f"{anios:.0f} años de referencia" if anios else "",
         ))
 
     if "tmed" in df_mes.columns:
@@ -1233,13 +1553,14 @@ def construir_tarjetas_anomalia(mes_completo, normales_registros):
         f"<p>{valor}</p>"
         f"<p class='fecha'>{diferencia}</p>"
         f"{etiqueta_clase(clase)}"
-        f"</div>"
-        for etiqueta, color, valor, diferencia, clase in filas
+        + (f"<p class='fecha'>{anios}</p>" if anios else "")
+        + "</div>"
+        for etiqueta, color, valor, diferencia, clase, anios in filas
     )
     titulo = f'<h3 class="subtitulo">{NOMBRES_MES[mes].capitalize()} de {anio} frente a lo normal</h3>'
     explicacion = (
         '<p class="aviso">Último mes completo comparado con los valores normales de AEMET para '
-        'esta estación (periodo de referencia 1991–2020). La etiqueta sitúa el mes entre los años '
+        f'esta estación ({_texto_periodo(periodo)}). La etiqueta sitúa el mes entre los años '
         'de referencia: «Normal» es el 20 % central; «Cálido/Frío» (o «Húmedo/Seco», «Alto/Bajo»), '
         'el 20 % siguiente por cada lado; «Muy…», el 20 % más extremo; y «Extremadamente…», fuera '
         'de todo lo registrado en el periodo.</p>'
@@ -1439,6 +1760,98 @@ def construir_rosa_vientos(df):
         + f'<p class="aviso">Cada día cuenta una vez, en el sector desde el que sopló su racha más fuerte.{nota}</p>'
     )
 
+#: (clave, columna del histórico/predicción, etiqueta, nombre corto,
+#: ¿récord por abajo?, margen para "cerca del récord").
+RECORDS_MOSTRADOS = [
+    ("tmax", "tmax", "Temperatura más alta", "máxima", False, 1.0),
+    ("tmin", "tmin", "Temperatura más baja", "mínima", True, 1.0),
+    ("prec", "prec", "Más lluvia en un día", "lluvia", False, None),  # "cerca" = 80 % del récord
+]
+
+
+def _fecha_record(record, mes):
+    dia, anio = record.get("dia"), record.get("anio")
+    if anio is None:
+        return ""
+    return f"{dia:.0f}/{mes:02d}/{anio:.0f}" if dia else f"{anio:.0f}"
+
+
+def _comparar_con_record(valor, record, por_abajo, margen):
+    """'supera', 'cerca' o None, comparando un valor con un récord."""
+    if valor is None or pd.isna(valor) or record is None:
+        return None
+    if (valor < record) if por_abajo else (valor > record):
+        return "supera"
+    if margen is None:
+        cerca = not por_abajo and record > 0 and valor >= 0.8 * record
+    else:
+        cerca = (valor <= record + margen) if por_abajo else (valor >= record - margen)
+    return "cerca" if cerca else None
+
+
+def notas_records(df, extremos, prevision=False):
+    """Frases sobre días (del histórico o de la predicción) que superan o
+    se quedan cerca de un récord mensual de la estación."""
+    if df.empty or not extremos:
+        return []
+    notas = []
+    for clave, col, _, nombre, por_abajo, margen in RECORDS_MOSTRADOS:
+        if clave not in extremos or col not in df.columns:
+            continue
+        for fecha, valor in zip(df["fecha"], df[col]):
+            record = extremos[clave][fecha.month - 1]
+            resultado = _comparar_con_record(valor, record["valor"], por_abajo, margen)
+            if not resultado:
+                continue
+            fecha_record = _fecha_record(record, fecha.month)
+            if not prevision and fecha_record == f"{fecha.day}/{fecha.month:02d}/{fecha.year}":
+                texto = "estableció el récord de"
+            elif resultado == "supera":
+                texto = "superaría el récord de" if prevision else "superó el récord de"
+            else:
+                texto = "se quedaría cerca del récord de" if prevision else "se quedó cerca del récord de"
+            unidad = record["unidad"]
+            notas.append((
+                fecha, resultado,
+                f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha:%d/%m}: {nombre} de {valor:.1f} {unidad}"
+                f"{' prevista' if prevision and clave != 'prec' else ''}, {texto} {NOMBRES_MES[fecha.month]} "
+                f"({record['valor']:.1f} {unidad}{', ' + fecha_record if fecha_record else ''})",
+            ))
+    notas.sort(key=lambda n: (n[1] != "supera", -n[0].value))
+    return [texto for _, _, texto in notas[:6]]
+
+
+def construir_records(extremos, df_hist, mes):
+    """Récords de la estación para el mes en curso y, si los hay, los días
+    recientes que los superaron o se quedaron cerca."""
+    if not extremos:
+        return ""
+    tarjetas = []
+    colores = {"tmax": MATERIAL["rojo"], "tmin": MATERIAL["azul"], "prec": MATERIAL["azul_claro"]}
+    for clave, _, etiqueta, _, _, _ in RECORDS_MOSTRADOS:
+        if clave not in extremos:
+            continue
+        record = extremos[clave][mes - 1]
+        if record["valor"] is None:
+            continue
+        tarjetas.append(
+            f'<div class="tarjeta" style="border-top-color:{colores[clave]};">'
+            f"<h3>{etiqueta}</h3>"
+            f'<p class="valor-dias">{record["valor"]:.1f} {record["unidad"]}</p>'
+            f"<p class='fecha'>{_fecha_record(record, mes)}</p>"
+            f"</div>"
+        )
+    if not tarjetas:
+        return ""
+    notas = notas_records(df_hist, extremos)
+    lista = "".join(f"<li>{n}</li>" for n in notas)
+    return (
+        f'<h3 class="subtitulo">Récords de {NOMBRES_MES[mes]} en esta estación</h3>'
+        f'<div class="tarjetas">{"".join(tarjetas)}</div>'
+        + (f'<ul class="notas-records">{lista}</ul>' if lista else "")
+    )
+
+
 def construir_recuadro_extremos(df, variables):
     """Tarjetas con el valor más alto y más bajo de cada variable de
     `variables` (ver VARIABLES_EXTREMOS_HISTORICO / _PREDICCION más arriba)."""
@@ -1468,6 +1881,7 @@ def main():
     generado = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
     avisos_por_area = {}  # se descargan una sola vez por área, aunque la compartan varias estaciones
+    mar_por_punto = {}  # ídem para la temperatura del mar
 
     for estacion in STATIONS:
         idema = estacion.get("idema")
@@ -1530,10 +1944,11 @@ def main():
         except Exception as exc:
             print(f"Aviso: no se pudo obtener el histórico de {nombre}: {exc}")
 
-        normales = []
+        normales, periodo = [], None
         try:
             if idema:
                 normales = obtener_normales(idema)
+                periodo = periodo_normales(idema)
         except Exception as exc:
             print(f"Aviso: no se pudieron obtener los valores normales de {nombre}: {exc}")
 
@@ -1567,6 +1982,51 @@ def main():
             if not df_pred.empty:
                 df_pred = df_pred[df_pred["fecha"] >= hoy].reset_index(drop=True)
 
+        time.sleep(2)
+
+        # Predicción por horas (próximas 48 h), con la misma reserva.
+        df_horas, noches = pd.DataFrame(), []
+        pred_horaria = None
+        try:
+            print(f"Procesando predicción horaria de {nombre}...")
+            pred_horaria = obtener_prediccion_horaria(municipio)
+            if prediccion_horaria_a_dataframe(pred_horaria)[0].empty:
+                print(f"Aviso: la predicción horaria de {nombre} salió vacía. Claves recibidas: {list(pred_horaria.keys())}.")
+                pred_horaria = None
+            else:
+                _guardar_ultimo(f"prediccion_horaria_{municipio}", pred_horaria)
+        except Exception as exc:
+            print(f"Aviso: no se pudo obtener la predicción horaria de {nombre}: {exc}")
+        if pred_horaria is None:
+            pred_horaria, guardado = _leer_ultimo(f"prediccion_horaria_{municipio}")
+            if pred_horaria:
+                notas_antiguedad.append(f"la predicción por horas (se muestra la descargada el {_hora_local(guardado)})")
+        if pred_horaria:
+            df_horas, noches = prediccion_horaria_a_dataframe(pred_horaria)
+
+        # Récords de la estación (caché mensual).
+        extremos = {}
+        try:
+            if idema:
+                extremos = obtener_extremos(idema)
+        except Exception as exc:
+            print(f"Aviso: no se pudieron obtener los récords de {nombre}: {exc}")
+
+        # Temperatura del mar en el punto de costa configurado.
+        mar = None
+        punto_mar = estacion.get("mar")
+        if punto_mar:
+            clave_mar = (punto_mar["lat"], punto_mar["lon"])
+            if clave_mar not in mar_por_punto:
+                try:
+                    print(f"Procesando temperatura del mar en {clave_mar}...")
+                    mar_por_punto[clave_mar] = obtener_temperatura_mar(*clave_mar)
+                    _guardar_ultimo(f"mar_{clave_mar[0]}_{clave_mar[1]}", mar_por_punto[clave_mar])
+                except Exception as exc:
+                    print(f"Aviso: no se pudo obtener la temperatura del mar: {exc}")
+                    mar_por_punto[clave_mar] = _leer_ultimo(f"mar_{clave_mar[0]}_{clave_mar[1]}")[0]
+            mar = mar_por_punto[clave_mar]
+
         slug = _slug(nombre)
         estaciones_menu.append((slug, nombre, estacion.get("lat"), estacion.get("lon")))
         seccion = [f'<section class="estacion" data-estacion="{slug}"><h2>{html.escape(nombre)}</h2>']
@@ -1576,7 +2036,7 @@ def main():
                 '<p class="aviso aviso-antiguo">⚠ AEMET no respondió en esta actualización para '
                 + " ni para ".join(notas_antiguedad) + ".</p>"
             )
-        seccion.append(construir_tarjetas_kpi(lectura_actual))
+        seccion.append(construir_tarjetas_kpi(lectura_actual, mar))
 
         # Extremos previstos arriba (donde antes estaban los históricos);
         # pronóstico primero (con fondo propio), histórico después con sus
@@ -1584,6 +2044,18 @@ def main():
         seccion.append(construir_recuadro_extremos(df_pred, VARIABLES_EXTREMOS_PREDICCION))
 
         seccion.append('<div class="bloque-pronostico">')
+        notas_prevision = notas_records(df_pred, extremos, prevision=True)
+        if notas_prevision:
+            seccion.append(
+                '<ul class="notas-records">' + "".join(f"<li>{n}</li>" for n in notas_prevision) + "</ul>"
+            )
+        graficos_horas = construir_graficos_horarios(df_horas, noches)
+        if graficos_horas:
+            seccion.append('<details class="bloque-horario" open><summary class="subtitulo">Próximas 48 horas</summary>')
+            seccion.append('<div class="graficos-apilados">')
+            seccion.extend(graficos_horas)
+            seccion.append('</div>')
+            seccion.append('<p class="aviso">La franja sombreada es la noche.</p></details>')
         seccion.append('<h3 class="subtitulo">Pronóstico (7 días)</h3>')
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_prediccion(df_pred))
@@ -1593,8 +2065,9 @@ def main():
         seccion.append('<h3 class="subtitulo">Histórico</h3>')
         seccion.append(construir_recuadro_extremos(df_hist, VARIABLES_EXTREMOS_HISTORICO))
         mes_completo = _mes_completo_mas_reciente(df_hist_completo)
-        seccion.append(construir_tarjetas_anomalia(mes_completo, normales))
+        seccion.append(construir_tarjetas_anomalia(mes_completo, normales, periodo))
         seccion.append(construir_dias_senalados(mes_completo, normales))
+        seccion.append(construir_records(extremos, df_hist, datetime.now(ZONA_HORARIA).month))
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_historico(df_hist, normales))
         seccion.append(construir_rosa_vientos(df_hist))
@@ -1707,11 +2180,15 @@ h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-botto
 .tarjeta .fecha {{ color: var(--texto-secundario); font-size: 0.8rem; }}
 .aviso {{ color: var(--texto-secundario); font-style: italic; }}
 .tarjetas-kpi {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.5rem 0 0.25rem; }}
-.tarjeta-kpi {{ flex: 1 1 150px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }}
+.tarjeta-kpi {{ box-sizing: border-box; flex: 1 1 140px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }}
 .tarjeta-kpi h3 {{ margin: 0 0 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--texto-secundario); }}
 .valor-kpi {{ margin: 0; font-size: 1.7rem; font-weight: 700; }}
 .detalle-kpi {{ margin: 0.3rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }}
 .tarjeta-dias {{ flex-basis: 170px; }}
+.notas-records {{ margin: 0.25rem 0 1rem; padding-left: 1.25rem; font-size: 0.9rem; }}
+.notas-records li {{ margin: 0.2rem 0; }}
+.bloque-horario {{ margin-bottom: 1rem; }}
+.bloque-horario > summary {{ cursor: pointer; margin: 0 0 0.5rem; }}
 .leyenda-uv {{ display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }}
 .uv-cat {{ display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }}
 .uv-muestra {{ width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }}
@@ -1908,6 +2385,14 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
         mapa.fitBounds(grupo.getBounds(), {{ padding: [30, 30] }});
     }}
 }})();
+
+// Al desplegar un bloque plegable, los gráficos de dentro recalculan su tamaño.
+document.querySelectorAll('details.bloque-horario').forEach(function(bloque) {{
+    bloque.addEventListener('toggle', function() {{
+        if (!bloque.open || !window.Plotly) return;
+        bloque.querySelectorAll('.plotly-graph-div').forEach(function(div) {{ Plotly.Plots.resize(div); }});
+    }});
+}});
 
 if ("serviceWorker" in navigator) {{
     window.addEventListener("load", function() {{
