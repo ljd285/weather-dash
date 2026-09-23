@@ -22,7 +22,7 @@ import tarfile
 import time
 import unicodedata
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -157,21 +157,39 @@ def _fusionar_registros(existentes, nuevos):
     return list(por_fecha.values())
 
 
-def obtener_historico(idema, dias):
+# AEMET publica los valores diarios con unos 4 días de retraso (validación);
+# el histórico se pide hasta MARGEN_DIAS días antes de hoy.
+MARGEN_DIAS = 5
+
+
+def fecha_fin_historico():
+    return (datetime.utcnow() - timedelta(days=MARGEN_DIAS)).date()
+
+
+def inicio_anio_hidrologico(fecha):
+    """El año hidrológico en España va del 1 de octubre al 30 de septiembre."""
+    return date(fecha.year if fecha.month >= 10 else fecha.year - 1, 10, 1)
+
+
+def obtener_historico(idema, dias, desde=None):
     """Devuelve los valores climatológicos diarios de los últimos `dias`
     días, usando una caché local (data/historico_<idema>.json) para no
     volver a pedir a AEMET los días que ya se descargaron en una ejecución
-    anterior: solo se piden los días nuevos desde la última fecha guardada.
+    anterior: solo se piden los días que falten.
 
     Los valores diarios de AEMET pasan por un proceso de validación antes de
     publicarse (AEMET indica un retardo oficial de unos 4 días), así que una
     petición cuyo rango llegue hasta "hoy" puede fallar. Por eso se aplica un
     margen de seguridad (MARGEN_DIAS) y el rango objetivo termina unos días
     antes de hoy.
+
+    Con `desde` (una fecha) la ventana empieza como muy tarde ese día, aunque
+    sea más de `dias` atrás (p. ej. el inicio del año hidrológico).
     """
-    MARGEN_DIAS = 5
-    fecha_fin_objetivo = (datetime.utcnow() - timedelta(days=MARGEN_DIAS)).date()
+    fecha_fin_objetivo = fecha_fin_historico()
     fecha_ini_objetivo = fecha_fin_objetivo - timedelta(days=dias)
+    if desde:
+        fecha_ini_objetivo = min(fecha_ini_objetivo, desde)
 
     cache = _leer_cache(idema)
     fechas_cache = {r["fecha"][:10] for r in cache if "fecha" in r}
@@ -193,7 +211,8 @@ def obtener_historico(idema, dias):
             cursor = datetime.combine(fecha_ini_peticion, datetime.min.time())
             fecha_fin_dt = datetime.combine(fecha_fin_objetivo, datetime.min.time())
             while cursor <= fecha_fin_dt:
-                siguiente = min(cursor + timedelta(days=364), fecha_fin_dt)
+                # Tramos de ~6 meses: AEMET rechaza rangos demasiado largos.
+                siguiente = min(cursor + timedelta(days=180), fecha_fin_dt)
                 ini_str = cursor.strftime("%Y-%m-%dT00:00:00UTC")
                 fin_str = siguiente.strftime("%Y-%m-%dT23:59:59UTC")
                 endpoint = (
@@ -762,6 +781,20 @@ def _slug(texto):
     return texto or "estacion"
 
 
+SECTORES_VIENTO = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"]
+
+
+def _sector_viento(grados):
+    """Sector de 8 rumbos (N, NE, E...) para una dirección en grados, o None."""
+    try:
+        grados = float(grados)
+    except (TypeError, ValueError):
+        return None
+    if not 0 <= grados <= 360:
+        return None
+    return SECTORES_VIENTO[int(((grados % 360) + 22.5) // 45) % 8]
+
+
 def construir_tarjetas_kpi(lectura):
     """Tarjetas destacadas con las condiciones observadas más recientes:
     temperatura, viento, humedad y precipitación de la última hora."""
@@ -781,19 +814,29 @@ def construir_tarjetas_kpi(lectura):
     vv = lectura.get("vv")
     viento_kmh = vv * 3.6 if vv is not None else None
 
+    # Dirección (de dónde sopla) y racha máxima de la última hora.
+    detalles_viento = []
+    sector = _sector_viento(lectura.get("dv"))
+    if sector and viento_kmh:
+        detalles_viento.append(f"del {sector}")
+    vmax = lectura.get("vmax")
+    if vmax is not None:
+        detalles_viento.append(f"racha {vmax * 3.6:.0f} km/h")
+
     kpis = [
-        ("Temperatura ahora", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C")),
-        ("Viento ahora", MATERIAL["indigo"], fmt(viento_kmh, "km/h")),
-        ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0)),
-        ("Precipitación (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm")),
+        ("Temperatura ahora", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), ""),
+        ("Viento ahora", MATERIAL["indigo"], fmt(viento_kmh, "km/h"), " · ".join(detalles_viento)),
+        ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), ""),
+        ("Precipitación (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
     ]
 
     tarjetas = "".join(
         f'<div class="tarjeta-kpi" style="border-top-color:{color};">'
         f"<h3>{etiqueta}</h3>"
         f'<p class="valor-kpi">{valor}</p>'
-        f"</div>"
-        for etiqueta, color, valor in kpis
+        + (f'<p class="detalle-kpi">{detalle}</p>' if detalle else "")
+        + "</div>"
+        for etiqueta, color, valor, detalle in kpis
     )
     nota_hora = f'<p class="aviso">Última observación: {hora}</p>' if hora else ""
     return f'<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
@@ -900,20 +943,16 @@ def clasificar(valor, normal, prefijo, clases):
     return clases[6]
 
 
-def construir_tarjetas_anomalia(df_hist, normales_registros):
+def construir_tarjetas_anomalia(mes_completo, normales_registros):
     """Compara el último mes calendario completo disponible en el histórico
-    frente a los valores climatológicos normales de ese mismo mes, y lo
-    clasifica (frío/normal/cálido, seco/normal/húmedo...) según los
-    quintiles de la serie de referencia."""
-    if df_hist.empty or not normales_registros:
-        print(f"Diagnóstico anomalía: df_hist vacío={df_hist.empty}, normales vacíos={not normales_registros}")
+    (`mes_completo`, resultado de _mes_completo_mas_reciente) frente a los
+    valores climatológicos normales de ese mismo mes, y lo clasifica
+    (frío/normal/cálido, seco/normal/húmedo...) según los quintiles de la
+    serie de referencia."""
+    if not mes_completo or not normales_registros:
+        print(f"Diagnóstico anomalía: mes completo={bool(mes_completo)}, normales vacíos={not normales_registros}")
         return ""
-
-    resultado = _mes_completo_mas_reciente(df_hist)
-    if not resultado:
-        print("Diagnóstico anomalía: no se encontró ningún mes calendario completo en el histórico.")
-        return ""
-    anio, mes, df_mes = resultado
+    anio, mes, df_mes = mes_completo
 
     meses_disponibles = normales_por_mes(normales_registros)
     normal = meses_disponibles.get(mes)
@@ -989,6 +1028,199 @@ def construir_tarjetas_anomalia(df_hist, normales_registros):
     )
     return f'{titulo}{explicacion}<div class="tarjetas">{tarjetas}</div>'
 
+
+#: (etiqueta, color, columna, condición, campo de días normales o None,
+#: mostrar siempre). Los campos normales de AEMET: nt_30 = días con máxima
+#: ≥ 30 °C, nt_00 = días con mínima ≤ 0 °C, np_010/np_100/np_300 = días con
+#: precipitación ≥ 1/10/30 mm, nw_55 = días con racha ≥ 55 km/h. Las noches
+#: tropicales y tórridas no tienen valor normal en AEMET.
+DIAS_SENALADOS = [
+    ("Días de calor (máx. ≥ 30 °C)", MATERIAL["rojo"], "tmax", lambda s: s >= 30, "nt_30", True),
+    ("Días muy calurosos (máx. ≥ 35 °C)", MATERIAL["rojo"], "tmax", lambda s: s >= 35, None, False),
+    ("Noches tropicales (mín. ≥ 20 °C)", MATERIAL["morado"], "tmin", lambda s: s >= 20, None, True),
+    ("Noches tórridas (mín. ≥ 25 °C)", MATERIAL["morado"], "tmin", lambda s: s >= 25, None, False),
+    ("Días de helada (mín. ≤ 0 °C)", MATERIAL["azul"], "tmin", lambda s: s <= 0, "nt_00", False),
+    ("Días de lluvia (≥ 1 mm)", MATERIAL["azul_claro"], "prec", lambda s: s >= 1, "np_010", True),
+    ("Días de lluvia fuerte (≥ 10 mm)", MATERIAL["azul_claro"], "prec", lambda s: s >= 10, "np_100", False),
+    ("Días de lluvia muy fuerte (≥ 30 mm)", MATERIAL["azul_claro"], "prec", lambda s: s >= 30, "np_300", False),
+    ("Días de rachas fuertes (≥ 55 km/h)", MATERIAL["indigo"], "racha", lambda s: s >= 55, "nw_55", False),
+]
+
+
+def construir_dias_senalados(mes_completo, normales_registros):
+    """Recuento de días señalados (calor, noches tropicales, lluvia...) del
+    último mes completo, junto al número medio de esos días en un mes igual
+    del periodo normal. Los umbrales poco habituales solo se muestran si ese
+    mes hubo alguno o si lo normal es tenerlos."""
+    if not mes_completo:
+        return ""
+    anio, mes, df_mes = mes_completo
+    normal = normales_por_mes(normales_registros).get(mes, {})
+
+    tarjetas = []
+    for etiqueta, color, col, condicion, campo_normal, siempre in DIAS_SENALADOS:
+        if col not in df_mes.columns or df_mes[col].isna().all():
+            continue
+        dias = int(condicion(df_mes[col].dropna()).sum())
+        valor_normal = _num(normal.get(f"{campo_normal}_md")) if campo_normal else None
+        if not siempre and dias == 0 and not (valor_normal and valor_normal >= 0.1):
+            continue
+        faltan = int(df_mes[col].isna().sum())
+        detalle = f"normal: {valor_normal:.1f}" if valor_normal is not None else "sin valor normal en AEMET"
+        if faltan:
+            detalle += f" · {faltan} día(s) sin dato"
+        tarjetas.append(
+            f'<div class="tarjeta tarjeta-dias" style="border-top-color:{color};">'
+            f"<h3>{etiqueta}</h3>"
+            f'<p class="valor-dias">{dias}</p>'
+            f"<p class='fecha'>{detalle}</p>"
+            f"</div>"
+        )
+    if not tarjetas:
+        return ""
+    return (
+        f'<h3 class="subtitulo">Días señalados en {NOMBRES_MES[mes]} de {anio}</h3>'
+        f'<div class="tarjetas">{"".join(tarjetas)}</div>'
+    )
+
+
+def precipitacion_normal_acumulada(fechas, normales_registros, inicio):
+    """Precipitación normal acumulada desde `inicio` hasta cada fecha: suma
+    de las medias mensuales (p_mes_md) de los meses ya completos más la
+    parte proporcional del mes en curso. Se usan medias, no medianas,
+    porque las medias sí se pueden sumar."""
+    por_mes = normales_por_mes(normales_registros)
+    medias = {m: _num(r.get("p_mes_md")) for m, r in por_mes.items()}
+    if len(medias) < 12 or any(v is None for v in medias.values()):
+        return None
+    resultado = []
+    for f in fechas:
+        total, cursor = 0.0, date(inicio.year, inicio.month, 1)
+        while (cursor.year, cursor.month) < (f.year, f.month):
+            total += medias[cursor.month]
+            cursor = date(cursor.year + cursor.month // 12, cursor.month % 12 + 1, 1)
+        total += medias[f.month] * f.day / calendar.monthrange(f.year, f.month)[1]
+        resultado.append(total)
+    return resultado
+
+
+def construir_anio_hidrologico(df_completo, normales_registros):
+    """Precipitación acumulada desde el 1 de octubre (inicio del año
+    hidrológico) comparada con la acumulada normal a la misma fecha: el
+    indicador habitual de sequía en España. Devuelve una lista de fragmentos
+    HTML (resumen + gráfico) o una lista vacía."""
+    if df_completo.empty or "prec" not in df_completo.columns:
+        return []
+    ultima = df_completo["fecha"].max().date()
+    inicio = inicio_anio_hidrologico(ultima)
+    dias = pd.date_range(inicio, ultima, freq="D")
+    prec = df_completo.set_index(df_completo["fecha"].dt.normalize())["prec"]
+    prec = prec[~prec.index.duplicated()].reindex(dias)
+    faltan = int(prec.isna().sum())
+    acumulado = prec.fillna(0).cumsum()
+    normal = precipitacion_normal_acumulada([d.date() for d in dias], normales_registros, inicio)
+
+    nombre_anio = f"{inicio.year}-{str(inicio.year + 1)[2:]}"
+    total = acumulado.iloc[-1]
+    resumen = f"<p><strong>{total:.0f} mm</strong> desde el 1 de octubre de {inicio.year} (hasta el {ultima:%d/%m/%Y})"
+    if normal:
+        normal_hoy = normal[-1]
+        if normal_hoy > 0:
+            resumen += f": un <strong>{100 * total / normal_hoy:.0f} %</strong> de lo normal a esta fecha ({normal_hoy:.0f} mm)"
+        normal_anual = precipitacion_normal_acumulada([date(inicio.year + 1, 9, 30)], normales_registros, inicio)[0]
+        resumen += f". Lo normal en un año hidrológico completo son {normal_anual:.0f} mm."
+    else:
+        resumen += "."
+    resumen += "</p>"
+    if faltan:
+        resumen += f'<p class="aviso">Faltan {faltan} día(s) sin dato de precipitación: el acumulado real puede ser algo mayor.</p>'
+
+    fig = go.Figure()
+    if normal:
+        fig.add_trace(go.Scatter(
+            x=dias, y=normal, name="Normal acumulada",
+            line=dict(color=MATERIAL["gris"], width=2, dash="dash"),
+            hovertemplate="%{y:.0f} mm",
+        ))
+    fig.add_trace(go.Scatter(
+        x=dias, y=acumulado, name=f"Acumulada {nombre_anio}",
+        line=dict(color=MATERIAL["azul"], width=2, shape="hv"),
+        hovertemplate="%{y:.0f} mm",
+    ))
+    series = [acumulado] + ([pd.Series(normal)] if normal else [])
+    fig.update_yaxes(range=_rango_eje(series, 0, 100, 20), title="mm")
+    fig.update_layout(
+        title="Precipitación acumulada del año hidrológico", hovermode="x unified",
+        legend=dict(orientation="h", y=-0.25), template="plotly_white", height=360,
+        margin=dict(t=50, b=40, l=50, r=20),
+    )
+    return [
+        f'<h3 class="subtitulo">Año hidrológico {nombre_anio}</h3>{resumen}',
+        fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True}),
+    ]
+
+
+#: Clases de velocidad de la racha (km/h). Se colorean con una rampa
+#: secuencial de un solo tono (índigo): en modo claro de claro (flojo) a
+#: oscuro (fuerte), y en modo oscuro al revés, para que el tramo más fuerte
+#: no se pierda contra el fondo. El JavaScript de la página cambia de rampa
+#: al cambiar de tema.
+CLASES_RACHA = [
+    (0, 20, "< 20 km/h"),
+    (20, 40, "20–40 km/h"),
+    (40, 60, "40–60 km/h"),
+    (60, None, "≥ 60 km/h"),
+]
+RAMPA_RACHA = {
+    "light": ["#C5CAE9", "#7986CB", "#3F51B5", "#1A237E"],
+    "dark": ["#3F51B5", "#7986CB", "#B0B8E6", "#EEF0FA"],
+}
+
+
+def construir_rosa_vientos(df):
+    """Rosa de los vientos con la dirección de la racha máxima de cada día
+    (el campo 'dir' de AEMET, en decenas de grado; 99 = dirección variable),
+    apilada por intensidad. Al pasar el ratón se ve también la máxima media
+    de los días de cada sector: en Valencia, las rachas de poniente (O–NO)
+    suelen coincidir con los días más calurosos y las de levante (E–SE)
+    con la brisa marina."""
+    if df.empty or "dir" not in df.columns or "racha" not in df.columns:
+        return ""
+    grados = pd.to_numeric(df["dir"], errors="coerce") * 10
+    datos = pd.DataFrame({"grados": grados, "racha": df["racha"], "tmax": df.get("tmax")})
+    datos = datos[(datos["grados"] >= 0) & (datos["grados"] <= 360) & datos["racha"].notna()]
+    if datos.empty:
+        return ""
+    datos["sector"] = datos["grados"].map(_sector_viento)
+    tmax_media = datos.groupby("sector")["tmax"].mean()
+
+    fig = go.Figure()
+    for (minimo, maximo, etiqueta), color in zip(CLASES_RACHA, RAMPA_RACHA["light"]):
+        en_clase = datos[(datos["racha"] >= minimo) & ((datos["racha"] < maximo) if maximo else True)]
+        conteo = en_clase["sector"].value_counts().reindex(SECTORES_VIENTO, fill_value=0)
+        fig.add_trace(go.Barpolar(
+            r=conteo.values, theta=SECTORES_VIENTO, name=etiqueta,
+            marker=dict(color=color, line=dict(color="rgba(255,255,255,0.9)", width=1)),
+            customdata=[f"{tmax_media[s]:.1f} °C" if s in tmax_media and pd.notna(tmax_media[s]) else "—" for s in SECTORES_VIENTO],
+            hovertemplate="%{theta}: %{r} día(s) con racha " + etiqueta + "<br>Máx. media de los días de este sector: %{customdata}<extra></extra>",
+        ))
+    fig.update_layout(
+        title="Dirección de la racha máxima diaria",
+        template="plotly_white", height=420, margin=dict(t=60, b=40, l=40, r=40),
+        legend=dict(orientation="h", y=-0.12),
+        polar=dict(
+            angularaxis=dict(direction="clockwise", rotation=90),
+            # El eje de días va entre N y NE para no tapar el sector norte.
+            radialaxis=dict(ticksuffix=" d", angle=67.5, tickangle=67.5, tickfont=dict(size=10)),
+        ),
+    )
+    variable = int((pd.to_numeric(df["dir"], errors="coerce") == 99).sum())
+    nota = f" {variable} día(s) con dirección variable no aparecen en la rosa." if variable else ""
+    return (
+        fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
+        + f'<p class="aviso">Cada día cuenta una vez, en el sector desde el que sopló su racha más fuerte.{nota}</p>'
+    )
+
 def construir_recuadro_extremos(df, variables):
     """Tarjetas con el valor más alto y más bajo de cada variable de
     `variables` (ver VARIABLES_EXTREMOS_HISTORICO / _PREDICCION más arriba)."""
@@ -1022,7 +1254,10 @@ def main():
     for estacion in STATIONS:
         idema = estacion.get("idema")
         nombre = estacion["nombre"]
-        df_hist, df_pred = pd.DataFrame(), pd.DataFrame()
+        # df_hist_completo llega hasta el inicio del año hidrológico (para
+        # la lluvia acumulada); df_hist es solo la ventana de DIAS_HISTORICO
+        # días que se muestra en los gráficos y en los extremos.
+        df_hist_completo, df_hist, df_pred = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
         lectura_actual = None
         notas_antiguedad = []
 
@@ -1067,8 +1302,13 @@ def main():
                 idema, nombre_real = resolver_idema(estacion["busqueda_nombre"])
                 nombre = estacion.get("nombre") or nombre_real
             print(f"Procesando histórico de {nombre} (idema={idema})...")
-            historico = obtener_historico(idema, DIAS_HISTORICO)
-            df_hist = historico_a_dataframe(historico)
+            historico = obtener_historico(
+                idema, DIAS_HISTORICO, desde=inicio_anio_hidrologico(fecha_fin_historico())
+            )
+            df_hist_completo = historico_a_dataframe(historico)
+            if not df_hist_completo.empty:
+                inicio_ventana = pd.Timestamp(fecha_fin_historico() - timedelta(days=DIAS_HISTORICO))
+                df_hist = df_hist_completo[df_hist_completo["fecha"] >= inicio_ventana]
         except Exception as exc:
             print(f"Aviso: no se pudo obtener el histórico de {nombre}: {exc}")
 
@@ -1134,10 +1374,19 @@ def main():
 
         seccion.append('<h3 class="subtitulo">Histórico</h3>')
         seccion.append(construir_recuadro_extremos(df_hist, VARIABLES_EXTREMOS_HISTORICO))
-        seccion.append(construir_tarjetas_anomalia(df_hist, normales))
+        mes_completo = _mes_completo_mas_reciente(df_hist_completo)
+        seccion.append(construir_tarjetas_anomalia(mes_completo, normales))
+        seccion.append(construir_dias_senalados(mes_completo, normales))
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_historico(df_hist, normales))
+        seccion.append(construir_rosa_vientos(df_hist))
         seccion.append('</div>')
+
+        anio_hidrologico = construir_anio_hidrologico(df_hist_completo, normales)
+        if anio_hidrologico:
+            seccion.append('<div class="graficos-apilados">')
+            seccion.extend(anio_hidrologico)
+            seccion.append('</div>')
 
         seccion.append("</section>")
         bloques_html.append("".join(seccion))
@@ -1243,6 +1492,9 @@ h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-botto
 .tarjeta-kpi {{ flex: 1 1 150px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }}
 .tarjeta-kpi h3 {{ margin: 0 0 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--texto-secundario); }}
 .valor-kpi {{ margin: 0; font-size: 1.7rem; font-weight: 700; }}
+.detalle-kpi {{ margin: 0.3rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }}
+.tarjeta-dias {{ flex-basis: 170px; }}
+.valor-dias {{ font-size: 1.6rem !important; font-weight: 700; margin: 0.1rem 0 !important; }}
 .bloque-pronostico {{ background: var(--fondo-pronostico); border-radius: 8px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }}
 .bloque-pronostico .subtitulo {{ margin-top: 0; }}
 .mapa-estaciones {{ height: 320px; border-radius: 8px; margin: 1rem 0 1.5rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }}
@@ -1294,6 +1546,8 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
     var raiz = document.documentElement;
     var boton = document.getElementById('toggle-tema');
 
+    var rampaRacha = {json.dumps(RAMPA_RACHA)};
+
     function coloresGrafico(tema) {{
         var esOscuro = tema === 'dark';
         return {{
@@ -1324,6 +1578,22 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
                     var copia = Object.assign({{}}, a);
                     copia.font = Object.assign({{}}, a.font, {{ color: c.texto }});
                     return copia;
+                }});
+            }}
+            if (div.layout.polar) {{
+                var rampa = rampaRacha[tema] || rampaRacha.light;
+                var indices = [];
+                (div.data || []).forEach(function(traza, i) {{ if (traza.type === 'barpolar') indices.push(i); }});
+                if (indices.length) {{
+                    Plotly.restyle(div, {{
+                        'marker.color': indices.map(function(_, j) {{ return rampa[j % rampa.length]; }}),
+                        'marker.line.color': c.fondo,
+                    }}, indices);
+                }}
+                actualizacion['polar.bgcolor'] = c.fondo;
+                ['radialaxis', 'angularaxis'].forEach(function(eje) {{
+                    actualizacion['polar.' + eje + '.gridcolor'] = c.rejilla;
+                    actualizacion['polar.' + eje + '.linecolor'] = c.rejilla;
                 }});
             }}
             Plotly.relayout(div, actualizacion);
