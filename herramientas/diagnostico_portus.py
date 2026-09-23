@@ -156,13 +156,13 @@ def datos_reales():
             print("  poemURL =", m.group(1).strip())
             valor = re.search(r"""["']([^"']+)["']""", m.group(1))
             if valor and not poem:
-                poem = valor.group(1)
+                poem = valor.group(1).replace("\\/", "/")
     estaciones = re.search(r"var param_stations = (\{.*?\});", textos[0], re.S)
     if estaciones:
         try:
             lista = json.loads(estaciones.group(1))
             print("  Estación 2630:", lista.get(str(ESTACION)))
-            print("  Estaciones con 'Valencia':", {k: v for k, v in lista.items() if "alencia" in v.get("nombre", "")})
+            print("  Estaciones con 'Valencia':", {k: v for k, v in lista.items() if "alencia" in (v.get("nombre") or "")})
         except ValueError as exc:
             print("  param_stations no es JSON:", exc)
     candidatos = [poem] if poem else []
