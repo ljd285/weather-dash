@@ -210,6 +210,51 @@ def obtener_observacion_actual(idema_obs):
         return None
     return lecturas[-1]
 
+def obtener_normales(idema):
+    """Descarga los valores climatológicos normales (la media histórica de
+    largo plazo, mes a mes) de una estación. Estos valores no cambian nunca,
+    así que se guardan en una caché PERMANENTE (sin fecha de caducidad,
+    a diferencia de la caché del histórico diario): una vez descargados
+    para una estación, no se vuelven a pedir a AEMET."""
+    ruta = os.path.join(CACHE_DIR, f"normales_{idema}.json")
+    if os.path.exists(ruta):
+        try:
+            with open(ruta, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"Aviso: no se pudo leer la caché de normales {ruta}, se vuelve a descargar: {exc}")
+
+    registros = aemet_get(f"/valores/climatologicos/normales/estacion/{idema}")
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(ruta, "w", encoding="utf-8") as f:
+        json.dump(registros, f, ensure_ascii=False, indent=0)
+    return registros
+
+
+def normales_por_mes(registros):
+    """Convierte los registros de valores normales en un diccionario
+    {mes: registro} (mes de 1 a 12), descartando la fila anual (mes 13)."""
+    por_mes = {}
+    for r in registros or []:
+        fecha = str(r.get("fecha", ""))
+        try:
+            mes = int(fecha.split("-")[-1])
+        except (ValueError, IndexError):
+            continue
+        if 1 <= mes <= 12:
+            por_mes[mes] = r
+    return por_mes
+
+
+def _num(valor):
+    """Convierte un valor de AEMET (string, posiblemente con coma decimal)
+    a float, o None si no es un número válido."""
+    if valor is None or valor == "":
+        return None
+    try:
+        return float(str(valor).replace(",", "."))
+    except ValueError:
+        return None
 
 def historico_a_dataframe(registros):
     """Convierte los registros diarios de AEMET en un DataFrame limpio.
@@ -482,6 +527,77 @@ def _extremo(df, col, modo):
     fecha = df.loc[idx, "fecha"].strftime("%d/%m/%Y")
     return valor, fecha
 
+NOMBRES_MES = [
+    "", "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+
+def _mes_completo_mas_reciente(df_hist):
+    """Devuelve (año, mes, datos_de_ese_mes) del último mes calendario
+    completo cubierto por el histórico, o None si no hay ninguno todavía."""
+    hoy = datetime.utcnow().date()
+    ultimo_dia_mes_anterior = hoy.replace(day=1) - timedelta(days=1)
+    anio, mes = ultimo_dia_mes_anterior.year, ultimo_dia_mes_anterior.month
+    df_mes = df_hist[(df_hist["fecha"].dt.year == anio) & (df_hist["fecha"].dt.month == mes)]
+    if df_mes.empty:
+        return None
+    return anio, mes, df_mes
+
+
+def construir_tarjetas_anomalia(df_hist, normales_registros):
+    """Compara el último mes calendario completo disponible en el histórico
+    frente a los valores climatológicos normales (media histórica de largo
+    plazo) de ese mismo mes."""
+    if df_hist.empty or not normales_registros:
+        return ""
+
+    resultado = _mes_completo_mas_reciente(df_hist)
+    if not resultado:
+        return ""
+    anio, mes, df_mes = resultado
+
+    normal = normales_por_mes(normales_registros).get(mes)
+    if not normal:
+        return ""
+
+    filas = []
+
+    def comparar(etiqueta, color, valor_real, valor_normal, unidad, decimales=1):
+        if valor_real is None or valor_normal is None or pd.isna(valor_real):
+            return
+        diferencia = valor_real - valor_normal
+        signo = "+" if diferencia >= 0 else ""
+        filas.append((
+            etiqueta, color,
+            f"{valor_real:.{decimales}f} {unidad}",
+            f"{signo}{diferencia:.{decimales}f} {unidad} vs. normal",
+        ))
+
+    if "tmed" in df_mes.columns:
+        comparar("Temperatura media", MATERIAL["rojo"], df_mes["tmed"].mean(), _num(normal.get("tm_mes")), "°C")
+    if "prec" in df_mes.columns:
+        comparar("Precipitación total", MATERIAL["azul_claro"], df_mes["prec"].sum(), _num(normal.get("p_mes")), "mm", 0)
+    if "hrmedia" in df_mes.columns:
+        comparar("Humedad media", MATERIAL["teal"], df_mes["hrmedia"].mean(), _num(normal.get("hr")), "%", 0)
+    if "velmedia" in df_mes.columns:
+        # w_med (el normal) ya viene en km/h de AEMET; velmedia ya se convirtió
+        # de m/s a km/h en historico_a_dataframe, así que las unidades coinciden.
+        comparar("Viento medio", MATERIAL["indigo"], df_mes["velmedia"].mean(), _num(normal.get("w_med")), "km/h")
+
+    if not filas:
+        return ""
+
+    tarjetas = "".join(
+        f'<div class="tarjeta" style="border-top-color:{color};">'
+        f"<h3>{etiqueta}</h3>"
+        f"<p>{valor}</p>"
+        f"<p class='fecha'>{diferencia}</p>"
+        f"</div>"
+        for etiqueta, color, valor, diferencia in filas
+    )
+    titulo = f'<h3 class="subtitulo">Comparado con la media histórica de {NOMBRES_MES[mes]} ({anio})</h3>'
+    return f'{titulo}<div class="tarjetas">{tarjetas}</div>'
 
 def construir_recuadro_extremos(df, variables):
     """Tarjetas con el valor más alto y más bajo de cada variable de
@@ -540,6 +656,13 @@ def main():
         except Exception as exc:
             print(f"Aviso: no se pudo obtener el histórico de {nombre}: {exc}")
 
+        normales = []
+        try:
+            if idema:
+                normales = obtener_normales(idema)
+        except Exception as exc:
+            print(f"Aviso: no se pudieron obtener los valores normales de {nombre}: {exc}")
+
         time.sleep(2)  # pequeña pausa para no encadenar peticiones demasiado rápido
 
         try:
@@ -576,6 +699,7 @@ def main():
 
         seccion.append('<h3 class="subtitulo">Histórico</h3>')
         seccion.append(construir_recuadro_extremos(df_hist, VARIABLES_EXTREMOS_HISTORICO))
+        seccion.append(construir_tarjetas_anomalia(df_hist, normales))
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_historico(df_hist))
         seccion.append('</div>')
