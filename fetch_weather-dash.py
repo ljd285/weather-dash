@@ -770,6 +770,12 @@ def main():
 }})();
 </script>
 <title>Dashboard AEMET</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#3F51B5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="AEMET Dashboard">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -989,6 +995,14 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
         mapa.fitBounds(grupo.getBounds(), {{ padding: [30, 30] }});
     }}
 }})();
+
+if ("serviceWorker" in navigator) {{
+    window.addEventListener("load", function() {{
+        navigator.serviceWorker.register("sw.js").catch(function(error) {{
+            console.log("No se pudo registrar el service worker:", error);
+        }});
+    }});
+}}
 </script>
 </body>
 </html>"""
