@@ -86,3 +86,11 @@ STATIONS = [
 
 # Días de histórico climatológico a mostrar en el dashboard
 DIAS_HISTORICO = 90
+
+# Notificación de avisos por email (avisos_notificar.py, workflow avisos.yml).
+# Cada episodio de aviso de las zonas de STATIONS abre un issue en GitHub que
+# menciona a este usuario, y GitHub le envía un correo. None = sin mención
+# (solo recibirías el correo si "vigilas" el repositorio).
+AVISOS_NOTIFICAR_A = "ljd285"
+# Nivel mínimo que se notifica: "amarillo", "naranja" o "rojo".
+AVISOS_NIVEL_MINIMO = "amarillo"

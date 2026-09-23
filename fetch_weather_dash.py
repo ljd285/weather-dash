@@ -598,6 +598,19 @@ def _normalizar(texto):
     return "".join(c for c in texto if not unicodedata.combining(c)).lower().strip()
 
 
+def fenomeno_de_evento(evento):
+    """Fenómeno de un aviso a partir de su nombre, sin el nivel: "Aviso de
+    temperaturas máximas de nivel amarillo" y "Aviso amarillo por lluvias"
+    dan "temperaturas máximas" y "lluvias". Sirve para agrupar los tramos
+    de un mismo episodio aunque cambien de nivel."""
+    texto = (evento or "").lower()
+    texto = re.sub(r"\b(aviso|avisos|de nivel|nivel|amarillo|naranja|rojo)\b", " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+    texto = re.sub(r"^(de|por|del)\s+", "", texto)
+    texto = re.sub(r"\s+(de|por|del)$", "", texto)
+    return texto or "fenómeno sin especificar"
+
+
 def _ficheros_cap(contenido):
     """AEMET entrega los avisos de un área como un .tar con un XML (formato
     CAP) por aviso; si solo hay uno puede llegar el XML suelto."""
@@ -640,6 +653,7 @@ def _avisos_de_cap(raiz):
         avisos.append({
             "nivel": nivel,
             "evento": texto(info, "event"),
+            "fenomeno": fenomeno_de_evento(texto(info, "event")),
             "titular": texto(info, "headline"),
             "descripcion": texto(info, "description"),
             "inicio": fecha("onset") or fecha("effective"),

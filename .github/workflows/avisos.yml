@@ -1,0 +1,38 @@
+name: Notificar avisos AEMET
+
+# Cada 15 minutos consulta los avisos de AEMET de las zonas de config.py y
+# abre, comenta o cierra issues con la etiqueta "aviso-aemet". Cada issue
+# menciona a AVISOS_NOTIFICAR_A (config.py), y GitHub le envía un correo.
+on:
+  schedule:
+    - cron: "3,18,33,48 * * * *"
+  workflow_dispatch: {}   # para lanzarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: notificar-avisos
+  cancel-in-progress: false
+
+jobs:
+  avisos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Revisar avisos y notificar
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python avisos_notificar.py

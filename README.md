@@ -103,6 +103,18 @@ Edita `config.py` y añade otra entrada a la lista `STATIONS`, por ejemplo:
 
 El script genera un bloque de gráficos por cada estación de la lista, todos en el mismo `docs/index.html`.
 
+## 7. Avisos por email
+
+El workflow **Notificar avisos AEMET** (`.github/workflows/avisos.yml`) revisa cada 15 minutos los avisos de AEMET de las zonas de `config.py`. No hace falta configurar nada más que la clave de AEMET que ya usa el dashboard:
+
+- Cada episodio de aviso (una zona y un fenómeno) abre un **issue** con la etiqueta `aviso-aemet` que menciona al usuario de `AVISOS_NOTIFICAR_A`, y **GitHub le envía un correo**. Los tramos del mismo episodio (p. ej. amarillo y luego naranja) van en el mismo issue.
+- Si el aviso sube o baja de nivel o cambian sus horas, se añade un comentario (otro correo). Si AEMET lo retira antes de tiempo, se comenta y se cierra. Cuando termina a su hora, se cierra sin comentario (GitHub puede enviar igualmente un breve correo de "Closed").
+- El nivel mínimo se elige con `AVISOS_NIVEL_MINIMO` en `config.py` (`"amarillo"`, `"naranja"` o `"rojo"`).
+- Para que lleguen los correos, en <https://github.com/settings/notifications> debe estar activado el correo para "Participating, @mentions and custom".
+- Para probarlo sin tocar GitHub: `AVISOS_SIMULACRO=1 python avisos_notificar.py` (con `AEMET_API_KEY` y `GITHUB_REPOSITORY` definidos).
+
+Es un complemento, no un sistema de emergencias: puede retrasarse o fallar (GitHub, AEMET, el correo). Ante avisos rojos, sigue los canales oficiales (AEMET, 112, ES-Alert).
+
 ## Notas técnicas
 
 - AEMET limita cada consulta de histórico a un máximo de ~1 año; el script trocea automáticamente el rango si algún día pides más de 90 días.
