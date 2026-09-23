@@ -1,3 +1,6 @@
-requests
-pandas
-plotly
+# Versiones fijadas: la página carga la versión de plotly.js que corresponde
+# al paquete de Python instalado, y cambiar de versión mayor puede romper los
+# gráficos. Actualizar a propósito, comprobando antes el resultado.
+requests==2.33.1
+pandas==3.0.6
+plotly==7.1.0

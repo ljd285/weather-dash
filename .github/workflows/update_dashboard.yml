@@ -2,12 +2,17 @@ name: Actualizar dashboard AEMET
 
 on:
   schedule:
-    # Todos los días a las xx:15
+    # Cada hora, en el minuto 50 (hora UTC)
     - cron: "50 * * * *"
   workflow_dispatch: {}   # permite lanzarlo manualmente desde la pestaña Actions
 
 permissions:
   contents: write
+
+# Nunca dos ejecuciones a la vez: se pisarían al subir la caché y al publicar.
+concurrency:
+  group: actualizar-dashboard
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -20,25 +25,42 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      # Última predicción/observación buenas de la ejecución anterior, para
+      # usarlas si AEMET falla ahora. La clave cambia en cada ejecución y
+      # restore-keys recupera la más reciente.
+      - name: Recuperar últimos datos buenos
+        uses: actions/cache@v4
+        with:
+          path: data/ultimo
+          key: ultimos-datos-${{ github.run_id }}
+          restore-keys: ultimos-datos-
+
       - name: Generar el dashboard
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
-        run: python fetch_weather-dash.py
+        run: python fetch_weather_dash.py
 
       - name: Guardar caché de datos históricos
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
-          git diff --staged --quiet || git commit -m "Actualizar caché de datos históricos [skip ci]"
-          git push
+          if ! git diff --staged --quiet; then
+            git commit -m "Actualizar caché de datos históricos [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push
+          fi
 
       - name: Publicar en GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
+          # Sustituye el historial de gh-pages en cada publicación en vez de
+          # acumular un commit por hora.
+          force_orphan: true

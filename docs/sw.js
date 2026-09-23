@@ -2,8 +2,12 @@
 // Estrategia: red primero (para tener siempre los datos más recientes al
 // abrir la app con conexión); si la petición falla (sin conexión), se
 // devuelve la última copia guardada en caché como reserva.
+//
+// Solo se guardan en caché la propia página y las librerías que necesita
+// (Plotly, Leaflet). Las teselas del mapa no se guardan: son miles de
+// imágenes y harían crecer la caché sin límite.
 
-const CACHE_NAME = "aemet-dashboard-v1";
+const CACHE_NAME = "aemet-dashboard-v2";
 const URLS_NUCLEO = [
   "./",
   "./index.html",
@@ -11,6 +15,11 @@ const URLS_NUCLEO = [
   "./icon-192.png",
   "./icon-512.png",
 ];
+const ORIGENES_LIBRERIAS = ["https://cdn.plot.ly", "https://unpkg.com"];
+
+function seGuarda(url) {
+  return url.origin === self.location.origin || ORIGENES_LIBRERIAS.includes(url.origin);
+}
 
 self.addEventListener("install", (evento) => {
   evento.waitUntil(
@@ -32,12 +41,15 @@ self.addEventListener("activate", (evento) => {
 
 self.addEventListener("fetch", (evento) => {
   if (evento.request.method !== "GET") return;
+  if (!seGuarda(new URL(evento.request.url))) return;  // p. ej. teselas del mapa: directo a la red
 
   evento.respondWith(
     fetch(evento.request)
       .then((respuesta) => {
-        const copia = respuesta.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(evento.request, copia));
+        if (respuesta.ok) {
+          const copia = respuesta.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(evento.request, copia));
+        }
         return respuesta;
       })
       .catch(() => caches.match(evento.request))

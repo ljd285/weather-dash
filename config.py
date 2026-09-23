@@ -23,6 +23,17 @@ deja en None, se usa el mismo valor que 'idema' como mejor intento.
 Los campos 'lat'/'lon' (grados decimales) son las coordenadas de la estación
 para el mapa. Se pueden ver en la propia página de AEMET de esa estación
 (aemet.es/.../ultimosdatos?l=<idema>), en el apartado "Latitud/Longitud".
+
+Los campos 'area_avisos' y 'zona_avisos' sirven para mostrar los avisos
+meteorológicos (Meteoalerta) de AEMET. 'area_avisos' es el código de la
+comunidad autónoma (61 Andalucía, 62 Aragón, 63 Asturias, 64 Baleares,
+65 Canarias, 66 Cantabria, 67 Castilla y León, 68 Castilla-La Mancha,
+69 Cataluña, 70 Extremadura, 71 Galicia, 72 Madrid, 73 Murcia, 74 Navarra,
+75 País Vasco, 76 La Rioja, 77 Comunitat Valenciana, 78 Ceuta, 79 Melilla).
+'zona_avisos' es el nombre exacto de la zona de aviso donde está la
+estación, tal como aparece en el mapa de https://www.aemet.es/es/eltiempo/
+prediccion/avisos (también vale su código numérico de 6 cifras). Si se deja
+en None, no se muestran avisos para esa estación.
 """
 
 STATIONS = [
@@ -38,6 +49,8 @@ STATIONS = [
         "municipio": "46250",       # código INE de Valencia capital
         "lat": 39.4805555556,
         "lon": -0.3663888889,
+        "area_avisos": "77",        # Comunitat Valenciana
+        "zona_avisos": "Litoral norte de Valencia",
     },
     {
         "nombre": "Valencia Aeropuerto",
@@ -47,6 +60,8 @@ STATIONS = [
         "municipio": "46159",       # código INE de Manises (término municipal del aeropuerto)
         "lat": 39.485,
         "lon": -0.474722,
+        "area_avisos": "77",
+        "zona_avisos": "Litoral norte de Valencia",
     },
     # Ejemplo de cómo añadir otra estación en el futuro:
     # {
@@ -57,6 +72,8 @@ STATIONS = [
     #     "municipio": "28079",
     #     "lat": 40.4117,
     #     "lon": -3.6805,
+    #     "area_avisos": "72",
+    #     "zona_avisos": "Metropolitana y Henares",
     # },
 ]
 
