@@ -7,13 +7,15 @@
 // (Plotly, Leaflet, tipografía). Las teselas del mapa no se guardan: son miles de
 // imágenes y harían crecer la caché sin límite.
 
-const CACHE_NAME = "aemet-dashboard-v3";
+const CACHE_NAME = "aemet-dashboard-v4";
 const URLS_NUCLEO = [
   "./",
   "./index.html",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
+  "./icon-maskable-192.png",
+  "./icon-maskable-512.png",
 ];
 const ORIGENES_LIBRERIAS = ["https://cdn.plot.ly", "https://unpkg.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com"];
 

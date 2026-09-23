@@ -16,6 +16,8 @@ Dashboard HTML que muestra, para una estación (por defecto Valencia):
 - **Próximas 48 horas**: temperatura y sensación, precipitación, probabilidad de lluvia y de tormenta, y viento hora a hora, con la noche sombreada.
 - **Récords de la estación** para el mes en curso (máxima, mínima y lluvia en un día), y avisos cuando un día reciente o previsto los supera o se queda cerca.
 - **Temperatura del mar** frente a la costa (modelo de Copernicus vía Open-Meteo; se configura con el campo `mar` de `config.py`).
+- **Días provisionales**: los últimos días, que AEMET aún no ha validado, se calculan con las observaciones horarias y se muestran con línea de puntos.
+- **Descarga de datos** en CSV (punto y coma y coma decimal, para Excel en español) y **enlace directo a cada estación** (`…/#valencia-aeropuerto`).
 
 Todo se ejecuta en la nube (GitHub Actions), sin instalar nada en tu ordenador.
 Se puede prototipar antes en Google Colab si quieres ver los datos sin montar aún la automatización.
@@ -111,3 +113,10 @@ El script genera un bloque de gráficos por cada estación de la lista, todos en
 - Los récords se guardan en `data/extremos_<idema>.json` y se renuevan cada 30 días. El periodo de referencia de los normales se lee una vez de los metadatos de AEMET y se guarda en `data/normales_<idema>_metadatos.json`.
 - La última predicción y la última observación descargadas con éxito se guardan en `data/ultimo/` (fuera del repositorio; el workflow las conserva con `actions/cache`). Si AEMET falla en una ejecución, la página muestra esas copias con un aviso de su antigüedad en vez de quedarse vacía.
 - Las versiones de `requirements.txt` están fijadas y la página carga la versión de plotly.js que corresponde al paquete de Python instalado. Al actualizar Plotly, comprueba que los gráficos se siguen viendo bien.
+
+## Estructura del código
+
+- `fetch_weather_dash.py`: descarga los datos de AEMET, los procesa y genera `docs/index.html`.
+- `templates/`: la página (`pagina.html`), sus estilos (`estilos.css`) y su JavaScript (`app.js`). Los huecos que rellena el script se escriben `${nombre}`; un `$` literal se escribe `$$`.
+- `config.py`: estaciones y opciones.
+- `tests/`: pruebas automáticas con datos de ejemplo (no llaman a AEMET). Se ejecutan con `pip install -r requirements.txt -r requirements-dev.txt` y `pytest`; el workflow `pruebas.yml` las pasa, junto con `ruff`, en cada cambio.
