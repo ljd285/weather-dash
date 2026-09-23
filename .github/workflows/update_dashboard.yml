@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar el repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -34,7 +34,7 @@ jobs:
       # usarlas si AEMET falla ahora. La clave cambia en cada ejecución y
       # restore-keys recupera la más reciente.
       - name: Recuperar últimos datos buenos
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/ultimo
           key: ultimos-datos-${{ github.run_id }}
