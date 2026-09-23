@@ -1,0 +1,24 @@
+name: Diagnóstico Portus (temporal)
+
+# Prueba temporal: consulta el servicio de datos de Portus (Puertos del
+# Estado) para la Boya de Valencia y deja en el log qué responde. Se
+# ejecuta solo en la rama de trabajo y se quitará antes de fusionar.
+on:
+  push:
+    branches: [claude/magical-cori-72outw]
+    paths: ["herramientas/diagnostico_portus.py", ".github/workflows/diagnostico-portus.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install requests==2.33.1
+      - run: python herramientas/diagnostico_portus.py
