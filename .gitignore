@@ -4,3 +4,6 @@ __pycache__/
 data/ultimo/
 # La página la genera el workflow y se publica en gh-pages.
 docs/index.html
+.pytest_cache/
+.ruff_cache/
+docs/datos/

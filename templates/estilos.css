@@ -1,0 +1,131 @@
+:root {
+    --md-rojo: ${color_rojo};
+    --md-azul: ${color_azul};
+    --md-azul-claro: ${color_azul_claro};
+    --md-indigo: ${color_indigo};
+    --md-morado: ${color_morado};
+    --md-teal: ${color_teal};
+    --md-verde: ${color_verde};
+    --md-gris: ${color_gris};
+    --fondo: ${color_fondo};
+    --superficie: #FFFFFF;
+    --texto: ${color_texto};
+    --texto-secundario: ${color_gris};
+    --sombra: rgba(0,0,0,0.12);
+    --sombra-suave: rgba(0,0,0,0.08);
+    --borde: rgba(0,0,0,0.08);
+    --fondo-pronostico: #E8EAF6;
+}
+:root[data-theme="dark"] {
+    --fondo: #121212;
+    --superficie: #1E1E1E;
+    --texto: #ECECEC;
+    --texto-secundario: #A0A0A0;
+    --sombra: rgba(0,0,0,0.6);
+    --sombra-suave: rgba(0,0,0,0.4);
+    --borde: rgba(255,255,255,0.1);
+    --fondo-pronostico: #232B45;
+}
+body {
+    font-family: "Roboto", -apple-system, Arial, sans-serif;
+    margin: 0; padding: 2rem;
+    background: var(--fondo);
+    color: var(--texto);
+}
+.contenedor { max-width: 1100px; margin: 0 auto; }
+.cabecera { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+h1 { font-size: 1.6rem; font-weight: 500; margin: 0; }
+.controles-cabecera { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.boton-tema {
+    background: var(--superficie); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 50%; width: 44px; height: 44px; font-size: 1.3rem; line-height: 1;
+    cursor: pointer; box-shadow: 0 1px 3px var(--sombra); flex-shrink: 0;
+}
+.selector-estacion {
+    background: var(--superficie); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 6px; padding: 0.55rem 0.75rem; font-size: 0.95rem; cursor: pointer;
+    box-shadow: 0 1px 3px var(--sombra);
+}
+h2 { font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-bottom: 2px solid var(--md-indigo); padding-bottom: 0.3rem; }
+.subtitulo { font-size: 1.05rem; font-weight: 500; color: var(--texto-secundario); margin-top: 1.5rem; }
+.estacion { background: var(--superficie); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }
+.tarjetas { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 1.5rem; }
+.tarjeta { flex: 1 1 200px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 0.8rem 1rem; box-shadow: 0 1px 3px var(--sombra); }
+.tarjeta h3 { margin: 0 0 0.4rem; font-size: 0.95rem; font-weight: 500; }
+.tarjeta p { margin: 0.2rem 0; font-size: 0.9rem; }
+.tarjeta .fecha { color: var(--texto-secundario); font-size: 0.8rem; }
+.aviso { color: var(--texto-secundario); font-style: italic; }
+.tarjetas-kpi { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.5rem 0 0.25rem; }
+.tarjeta-kpi { box-sizing: border-box; flex: 1 1 140px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }
+.tarjeta-kpi h3 { margin: 0 0 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--texto-secundario); }
+.valor-kpi { margin: 0; font-size: 1.7rem; font-weight: 700; }
+.detalle-kpi { margin: 0.3rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }
+.tarjeta-dias { flex-basis: 170px; }
+.notas-records { margin: 0.25rem 0 1rem; padding-left: 1.25rem; font-size: 0.9rem; }
+.notas-records li { margin: 0.2rem 0; }
+.bloque-plegable { margin-bottom: 1rem; }
+.bloque-plegable > summary { cursor: pointer; margin: 0 0 0.5rem; }
+.dias-pronostico { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 0.5rem; margin: 0.5rem 0 1rem; }
+.dia-pronostico { background: var(--superficie); border-radius: 8px; padding: 0.6rem 0.4rem; text-align: center; box-shadow: 0 1px 3px var(--sombra); }
+.dia-pronostico p { margin: 0.15rem 0; }
+.dia-nombre { font-weight: 500; }
+.dia-icono { font-size: 2rem; line-height: 1.2; }
+.dia-cielo { font-size: 0.75rem; color: var(--texto-secundario); min-height: 2em; }
+.dia-temps { font-size: 1.05rem; }
+.t-max { font-weight: 700; }
+.t-min { color: var(--texto-secundario); }
+.dia-detalle { font-size: 0.8rem; color: var(--texto-secundario); }
+.rango-semana { position: relative; height: 6px; margin: 0.35rem 0.5rem; border-radius: 3px; background: var(--borde); }
+.rango-semana > span { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+/* Texto solo para lectores de pantalla (p. ej. en lugar de un emoji). */
+.solo-lector { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* Foco visible al navegar con el teclado. */
+a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--md-azul); outline-offset: 2px; border-radius: 4px; }
+.leyenda-uv { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }
+.uv-cat { display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }
+.uv-muestra { width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }
+.valor-dias { font-size: 1.6rem !important; font-weight: 700; margin: 0.1rem 0 !important; }
+.bloque-pronostico { background: var(--fondo-pronostico); border-radius: 8px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }
+.bloque-pronostico .subtitulo { margin-top: 0; }
+:root[data-theme="dark"] .mapa-estaciones .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
+.mapa-estaciones { height: 320px; border-radius: 8px; margin: 1rem 0 1.5rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }
+.avisos { margin: 0.5rem 0 1rem; }
+.avisos .subtitulo { margin-top: 0; }
+.avisos-ninguno, .avisos-error { padding: 0.6rem 0.9rem; border-radius: 6px; font-size: 0.9rem; }
+.avisos-ninguno { background: rgba(76,175,80,0.14); color: var(--texto); }
+.avisos-error { background: rgba(96,125,139,0.14); color: var(--texto); }
+.avisos a { color: inherit; }
+.aviso-meteo { border-radius: 6px; padding: 0.7rem 0.9rem; margin-bottom: 0.5rem; border-left: 6px solid rgba(0,0,0,0.35); }
+.aviso-meteo p { margin: 0.35rem 0 0; font-size: 0.9rem; }
+.aviso-cabecera { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; }
+.aviso-cuando { font-size: 0.85rem; }
+.nivel-amarillo { background: #FFEB3B; color: #212121; }
+.nivel-naranja { background: #FF9800; color: #212121; }
+.nivel-rojo { background: #C62828; color: #FFFFFF; }
+.aviso-antiguo { color: #E65100; font-style: normal; }
+:root[data-theme="dark"] .aviso-antiguo { color: #FFB74D; }
+.clase { display: inline-block; margin-top: 0.3rem; padding: 0.15rem 0.55rem; border-radius: 999px; color: #FFFFFF; font-size: 0.8rem; font-weight: 500; }
+.graficos-apilados { display: flex; flex-direction: column; gap: 0.5rem; }
+.graficos-apilados > div, .graficos-apilados .plotly-graph-div { width: 100% !important; }
+footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; text-align: center; }
+@media (max-width: 640px) {
+    body { padding: 1rem; }
+    h1 { font-size: 1.3rem; }
+    .estacion { padding: 1rem; }
+    .bloque-pronostico { padding: 0.75rem 0.75rem 0.25rem; }
+    .tarjeta, .tarjeta-kpi { flex-basis: 100%; }
+    .mapa-estaciones { height: 240px; }
+    .dias-pronostico { grid-template-columns: 1fr; gap: 0.35rem; }
+    .dia-pronostico { display: grid; grid-template-columns: 4.5rem 2.2rem 1fr auto; grid-template-areas: "nombre icono cielo temps" "nombre icono detalle detalle2" "nombre icono rango rango"; align-items: center; text-align: left; column-gap: 0.5rem; padding: 0.4rem 0.7rem; }
+    .dia-nombre { grid-area: nombre; }
+    .dia-icono { grid-area: icono; font-size: 1.6rem; }
+    .dia-cielo { grid-area: cielo; min-height: 0; }
+    .dia-temps { grid-area: temps; text-align: right; }
+    .dia-detalle:nth-of-type(5) { grid-area: detalle; }
+    .dia-detalle:nth-of-type(6) { grid-area: detalle2; text-align: right; }
+    .rango-semana { grid-area: rango; margin: 0.3rem 0 0.1rem; }
+}
+.minigrafico { display: block; width: 100%; max-width: 160px; height: 32px; margin: 0.4rem auto 0; }
+.descarga { margin: 0.5rem 0 1rem; font-size: 0.9rem; }
+.descarga a { color: var(--md-indigo); font-weight: 500; }
+:root[data-theme="dark"] .descarga a { color: #9FA8DA; }
