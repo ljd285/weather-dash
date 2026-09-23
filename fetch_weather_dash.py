@@ -15,6 +15,7 @@ import calendar
 import html
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -59,6 +60,8 @@ MATERIAL = {
     "teal": "#009688",
     "verde": "#4CAF50",
     "gris": "#607D8B",
+    "ambar": "#FFB300",
+    "normal": "#8A8A8A",  # líneas de referencia; legible sobre fondo claro y oscuro
     "fondo": "#FAFAFA",
     "texto": "#212121",
 }
@@ -530,7 +533,10 @@ def historico_a_dataframe(registros):
     df.columns = [c.lower() for c in df.columns]
     df["fecha"] = pd.to_datetime(df["fecha"])
 
-    columnas_numericas = ["tmax", "tmin", "tmed", "prec", "velmedia", "racha", "hrmedia", "hrmax", "hrmin"]
+    columnas_numericas = [
+        "tmax", "tmin", "tmed", "prec", "velmedia", "racha", "hrmedia", "hrmax", "hrmin",
+        "pintmax", "presmax", "presmin", "sol",
+    ]
     for col in columnas_numericas:
         if col in df.columns:
             serie = df[col].astype(str).str.replace(",", ".", regex=False)
@@ -581,6 +587,7 @@ def prediccion_a_dataframe(prediccion):
         prob_precip = max(valores_precip) if valores_precip else None
 
         humedad = dia.get("humedadRelativa", {}) or {}
+        sensacion = dia.get("sensTermica", {}) or {}
 
         filas.append({
             "fecha": fecha,
@@ -591,12 +598,15 @@ def prediccion_a_dataframe(prediccion):
             "hum_min": humedad.get("minima"),
             "viento_max": _max_valor(dia.get("viento"), "velocidad"),
             "racha_max": _max_valor(dia.get("rachaMax"), "value"),
+            "sens_max": sensacion.get("maxima"),
+            "sens_min": sensacion.get("minima"),
+            "uv_max": dia.get("uvMax"),  # AEMET solo lo da para los primeros días
         })
 
     df = pd.DataFrame(filas)
     if not df.empty:
         df["fecha"] = pd.to_datetime(df["fecha"])
-        for col in ["tmax", "tmin", "prob_precip", "hum_max", "hum_min"]:
+        for col in ["tmax", "tmin", "prob_precip", "hum_max", "hum_min", "sens_max", "sens_min", "uv_max"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
@@ -673,6 +683,10 @@ def construir_graficos_historico(df, normales_registros=None):
         fig.update_layout(title="Precipitación", showlegend=False, **layout_comun)
         graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
+    # Intensidad máxima de la lluvia: dice si fue torrencial mejor que el total.
+    if "pintmax" in df.columns and (df["pintmax"] > 0).any():
+        graficos.append(_grafico_intensidad_lluvia(df, config, layout_comun))
+
     # Viento
     fig = go.Figure()
     if "velmedia" in df.columns:
@@ -695,7 +709,102 @@ def construir_graficos_historico(df, normales_registros=None):
     fig.update_layout(title="Humedad relativa", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
+    # Presión: banda entre la mínima y la máxima de cada día, sobre la presión
+    # media normal de la estación. Las bajadas marcadas anuncian borrascas y
+    # DANAs. AEMET la da a la altura de la estación (no reducida al nivel del
+    # mar), igual que el valor normal, así que son comparables entre sí.
+    if {"presmax", "presmin"} <= set(df.columns) and df["presmin"].notna().any():
+        fig = go.Figure()
+        series = [df["presmax"], df["presmin"]]
+        fig.add_trace(go.Scatter(
+            x=df["fecha"], y=df["presmax"], name="Máxima", line=dict(color=MATERIAL["gris"], width=1.5),
+            hovertemplate="%{y:.1f} hPa",
+        ))
+        fig.add_trace(go.Scatter(
+            x=df["fecha"], y=df["presmin"], name="Mínima", line=dict(color=MATERIAL["indigo"], width=1.5),
+            fill="tonexty", fillcolor="rgba(63,81,181,0.12)", hovertemplate="%{y:.1f} hPa",
+        ))
+        df_normal = normales_diarios(df["fecha"], normales_registros, ["q_med_md"])
+        if not df_normal.empty:
+            fig.add_trace(go.Scatter(
+                x=df_normal["fecha"], y=df_normal["q_med_md"], name="Media normal",
+                line=dict(color=MATERIAL["normal"], width=1.5, dash="dash"),
+                hovertemplate="%{y:.1f} hPa",
+            ))
+            series.append(df_normal["q_med_md"])
+        fig.update_xaxes(rangeselector=_rangeselector())
+        fig.update_yaxes(range=_rango_eje(series, 1000, 1025, 2), title="hPa")
+        fig.update_layout(
+            title="Presión atmosférica (a la altura de la estación)", hovermode="x unified",
+            legend=dict(orientation="h", y=-0.25, traceorder="normal"), **layout_comun,
+        )
+        graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
+
+    # Horas de sol, frente a la media normal de horas de sol diarias.
+    if "sol" in df.columns and df["sol"].notna().any():
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=df["fecha"], y=df["sol"], name="Horas de sol", marker_color=MATERIAL["ambar"],
+            hovertemplate="%{y:.1f} h<extra></extra>",
+        ))
+        df_normal = normales_diarios(df["fecha"], normales_registros, ["inso_md"])
+        if not df_normal.empty:
+            fig.add_trace(go.Scatter(
+                x=df_normal["fecha"], y=df_normal["inso_md"], name="Media normal",
+                line=dict(color=MATERIAL["normal"], width=1.5, dash="dash"),
+                hovertemplate="%{y:.1f} h<extra>Media normal</extra>",
+            ))
+        fig.update_xaxes(rangeselector=_rangeselector())
+        fig.update_yaxes(range=[0, 15], title="h")
+        fig.update_layout(title="Horas de sol", legend=dict(orientation="h", y=-0.25), **layout_comun)
+        graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
+        faltan = int(df["sol"].isna().sum())
+        if faltan:
+            graficos.append(f'<p class="aviso">La estación no tiene dato de horas de sol en {faltan} de los {len(df)} días.</p>')
+
     return graficos
+
+
+#: Clasificación de AEMET de la intensidad de la lluvia (mm/h):
+#: (límite superior incluido, nombre).
+CLASES_INTENSIDAD_LLUVIA = [(2, "débil"), (15, "moderada"), (30, "fuerte"), (60, "muy fuerte"), (None, "torrencial")]
+
+
+def clase_intensidad_lluvia(mm_h):
+    for limite, nombre in CLASES_INTENSIDAD_LLUVIA:
+        if limite is None or mm_h <= limite:
+            return nombre
+
+
+def _grafico_intensidad_lluvia(df, config, layout_comun):
+    """Intensidad máxima de la lluvia de cada día ('pintMax' de AEMET: la
+    lluvia de los 10 minutos más intensos, expresada en mm/h). Las líneas
+    marcan los umbrales de AEMET de lluvia fuerte, muy fuerte y torrencial."""
+    datos = df[df["pintmax"] > 0]
+    hora = datos["horapintmax"] if "horapintmax" in datos.columns else pd.Series("", index=datos.index)
+    textos = [
+        f"{clase_intensidad_lluvia(v).capitalize()}" + (f" · a las {h}" if isinstance(h, str) and ":" in h else "")
+        for v, h in zip(datos["pintmax"], hora)
+    ]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=datos["fecha"], y=datos["pintmax"], name="Intensidad máxima", marker_color=MATERIAL["azul"],
+        customdata=textos, hovertemplate="%{y:.1f} mm/h<br>%{customdata}<extra></extra>",
+    ))
+    for umbral, nombre in [(15, "fuerte"), (30, "muy fuerte"), (60, "torrencial")]:
+        fig.add_hline(
+            y=umbral, line_width=1, line_dash="dot", line_color=MATERIAL["gris"],
+            annotation_text=nombre, annotation_position="top left",
+            annotation_font=dict(size=10, color=MATERIAL["gris"]),
+        )
+    fig.update_xaxes(rangeselector=_rangeselector(), range=[df["fecha"].min(), df["fecha"].max() + pd.Timedelta(days=1)])
+    fig.update_yaxes(range=_rango_eje([datos["pintmax"]], 0, 70, 10), title="mm/h")
+    fig.update_layout(title="Intensidad máxima de la lluvia", showlegend=False, **layout_comun)
+    return (
+        fig.to_html(full_html=False, include_plotlyjs=False, config=config)
+        + '<p class="aviso">Lluvia de los 10 minutos más intensos de cada día, en mm/h. Según AEMET, '
+        'la lluvia es fuerte por encima de 15 mm/h, muy fuerte por encima de 30 y torrencial por encima de 60.</p>'
+    )
 
 
 def construir_graficos_prediccion(df):
@@ -722,14 +831,33 @@ def construir_graficos_prediccion(df):
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=df["fecha"], y=df["tmax"], name="Máxima prevista", marker_color=MATERIAL["rojo"],
-        text=_texto_barras(df["tmax"], "°"), textposition="outside",
+        # Texto dentro, arriba: encima de la barra van las marcas de sensación.
+        text=_texto_barras(df["tmax"], "°"), textposition="inside", insidetextanchor="end",
     ))
     fig.add_trace(go.Bar(
         x=df["fecha"], y=df["tmin"], name="Mínima prevista", marker_color=MATERIAL["azul"],
         text=_texto_barras(df["tmin"], "°"), textposition="inside",
     ))
+    # Sensación térmica prevista por AEMET, como marcas sobre las barras; solo
+    # si se aparta de la temperatura en algún día (con calor húmedo o frío
+    # con viento), para no recargar el gráfico cuando coinciden.
+    series_rango = [df["tmax"], df["tmin"]]
+    for col, col_t, nombre, color in [
+        ("sens_max", "tmax", "Sensación máx.", "#B71C1C"),
+        ("sens_min", "tmin", "Sensación mín.", "#0D47A1"),
+    ]:
+        if col not in df.columns:
+            continue
+        distinta = (df[col] - df[col_t]).abs() >= 1
+        if distinta.any():
+            fig.add_trace(go.Scatter(
+                x=df["fecha"], y=df[col].where(distinta), name=nombre, mode="markers",
+                marker=dict(symbol="diamond", size=10, color=color, line=dict(color="#FFFFFF", width=1.5)),
+                hovertemplate="%{y:.0f} °C",
+            ))
+            series_rango.append(df[col])
     lineas_de_dia(fig)
-    fig.update_yaxes(range=_rango_eje([df["tmax"], df["tmin"]], 5, 45, 3), title="°C")
+    fig.update_yaxes(range=_rango_eje(series_rango, 5, 45, 3), title="°C")
     fig.update_layout(title="Temperatura prevista", barmode="overlay", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
@@ -768,7 +896,44 @@ def construir_graficos_prediccion(df):
     fig.update_layout(title="Humedad prevista", barmode="overlay", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
 
+    # Índice UV máximo, con los colores y categorías estándar de la OMS.
+    if "uv_max" in df.columns and df["uv_max"].notna().any():
+        datos = df[df["uv_max"].notna()]
+        categorias = [categoria_uv(v) for v in datos["uv_max"]]
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=datos["fecha"], y=datos["uv_max"], name="Índice UV",
+            marker=dict(color=[c[1] for c in categorias]),
+            text=[f"{v:.0f}" for v in datos["uv_max"]], textposition="outside",
+            customdata=[c[0] for c in categorias],
+            hovertemplate="UV %{y:.0f} · %{customdata}<extra></extra>",
+        ))
+        lineas_de_dia(fig)
+        fig.update_xaxes(range=[df["fecha"].min() - pd.Timedelta(hours=12), df["fecha"].max() + pd.Timedelta(hours=12)])
+        fig.update_yaxes(range=[0, max(12, datos["uv_max"].max() + 2)], title="UV")
+        fig.update_layout(title="Índice UV máximo previsto", showlegend=False, **layout_comun)
+        graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
+        leyenda = "".join(
+            f'<span class="uv-cat"><span class="uv-muestra" style="background:{color};"></span>'
+            f'{nombre} ({"≥ " + str(limite_anterior + 1) if limite is None else f"{limite_anterior + 1}–{limite}" if limite_anterior + 1 < limite else limite})</span>'
+            for (limite, nombre, color), limite_anterior in zip(CATEGORIAS_UV, [-1] + [c[0] for c in CATEGORIAS_UV[:-1]])
+        )
+        graficos.append(f'<p class="aviso leyenda-uv">Categorías de la OMS: {leyenda}. AEMET solo da el índice UV de los primeros días.</p>')
+
     return graficos
+
+
+#: Categorías del índice UV de la OMS: (límite superior incluido, nombre, color).
+CATEGORIAS_UV = [
+    (2, "bajo", "#289500"), (5, "moderado", "#F7E400"), (7, "alto", "#F85900"),
+    (10, "muy alto", "#D8001D"), (None, "extremo", "#6B49C8"),
+]
+
+
+def categoria_uv(valor):
+    for limite, nombre, color in CATEGORIAS_UV:
+        if limite is None or valor <= limite:
+            return nombre, color
 
 
 def _slug(texto):
@@ -779,6 +944,44 @@ def _slug(texto):
         texto = texto.replace(original, sin_acento)
     texto = re.sub(r"[^a-z0-9]+", "-", texto).strip("-")
     return texto or "estacion"
+
+
+def punto_de_rocio(t, hr):
+    """Punto de rocío (°C) con la fórmula de Magnus, a partir de la
+    temperatura (°C) y la humedad relativa (%)."""
+    if t is None or hr is None or hr <= 0:
+        return None
+    a, b = 17.62, 243.12
+    g = math.log(hr / 100) + a * t / (b + t)
+    return b * g / (a - g)
+
+
+def sensacion_termica(t, hr, viento_kmh):
+    """Temperatura aparente (°C): índice de calor (fórmula de Rothfusz, NOAA)
+    con calor y humedad, sensación por viento (fórmula de Environment
+    Canada/NOAA) con frío y viento, y la propia temperatura en otro caso."""
+    if t is None:
+        return None
+    if hr is not None and t >= 27 and hr >= 40:
+        f = t * 9 / 5 + 32
+        hi = (-42.379 + 2.04901523 * f + 10.14333127 * hr - 0.22475541 * f * hr
+              - 0.00683783 * f * f - 0.05481717 * hr * hr + 0.00122874 * f * f * hr
+              + 0.00085282 * f * hr * hr - 0.00000199 * f * f * hr * hr)
+        return (hi - 32) * 5 / 9
+    if viento_kmh is not None and t <= 10 and viento_kmh > 4.8:
+        v = viento_kmh ** 0.16
+        return 13.12 + 0.6215 * t - 11.37 * v + 0.3965 * t * v
+    return t
+
+
+#: Sensación de humedad según el punto de rocío (°C): (límite superior, texto).
+CONFORT_ROCIO = [(10, "aire seco"), (16, "agradable"), (18, "algo húmedo"), (21, "bochornoso"), (24, "muy bochornoso"), (None, "opresivo")]
+
+
+def confort_rocio(td):
+    for limite, texto in CONFORT_ROCIO:
+        if limite is None or td < limite:
+            return texto
 
 
 SECTORES_VIENTO = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"]
@@ -823,10 +1026,22 @@ def construir_tarjetas_kpi(lectura):
     if vmax is not None:
         detalles_viento.append(f"racha {vmax * 3.6:.0f} km/h")
 
+    # Sensación térmica (solo si se aparta de la temperatura) y punto de
+    # rocío, que dice mejor que la humedad relativa si hay bochorno.
+    ta, hr = lectura.get("ta"), lectura.get("hr")
+    detalle_temperatura = ""
+    sensacion = sensacion_termica(ta, hr, viento_kmh)
+    if sensacion is not None and abs(sensacion - ta) >= 1:
+        detalle_temperatura = f"sensación {sensacion:.0f} °C"
+    rocio = lectura.get("tpr")
+    if rocio is None:
+        rocio = punto_de_rocio(ta, hr)
+    detalle_humedad = f"rocío {rocio:.0f} °C · {confort_rocio(rocio)}" if rocio is not None else ""
+
     kpis = [
-        ("Temperatura ahora", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), ""),
+        ("Temperatura ahora", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), detalle_temperatura),
         ("Viento ahora", MATERIAL["indigo"], fmt(viento_kmh, "km/h"), " · ".join(detalles_viento)),
-        ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), ""),
+        ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
         ("Precipitación (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
     ]
 
@@ -999,6 +1214,9 @@ def construir_tarjetas_anomalia(mes_completo, normales_registros):
         # w_med_md (el normal) ya viene en km/h de AEMET; velmedia ya se convirtió
         # de m/s a km/h en historico_a_dataframe, así que las unidades coinciden.
         comparar("Viento medio", MATERIAL["indigo"], df_mes["velmedia"].mean(), "w_med", "md", "km/h", CLASES_GENERICAS)
+    if "sol" in df_mes.columns and df_mes["sol"].notna().all():
+        # Solo con el mes entero: muchas estaciones no miden el sol todos los días.
+        comparar("Horas de sol (media diaria)", MATERIAL["ambar"], df_mes["sol"].mean(), "inso", "md", "h", CLASES_GENERICAS)
 
     if not filas:
         return ""
@@ -1494,6 +1712,9 @@ h2 {{ font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-botto
 .valor-kpi {{ margin: 0; font-size: 1.7rem; font-weight: 700; }}
 .detalle-kpi {{ margin: 0.3rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }}
 .tarjeta-dias {{ flex-basis: 170px; }}
+.leyenda-uv {{ display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }}
+.uv-cat {{ display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }}
+.uv-muestra {{ width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }}
 .valor-dias {{ font-size: 1.6rem !important; font-weight: 700; margin: 0.1rem 0 !important; }}
 .bloque-pronostico {{ background: var(--fondo-pronostico); border-radius: 8px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }}
 .bloque-pronostico .subtitulo {{ margin-top: 0; }}

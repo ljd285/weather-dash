@@ -10,6 +10,9 @@ Dashboard HTML que muestra, para una estación (por defecto Valencia):
 - **Días señalados** del último mes completo (días de calor, noches tropicales y tórridas, días de lluvia, rachas fuertes…) junto a lo normal.
 - **Viento**: dirección y racha en la observación actual, y rosa de los vientos con la dirección de la racha máxima de cada día.
 - **Año hidrológico**: lluvia acumulada desde el 1 de octubre frente a la acumulada normal a la misma fecha.
+- **Lluvia intensa**: intensidad máxima diaria (mm/h) con los umbrales de AEMET de lluvia fuerte, muy fuerte y torrencial.
+- **Presión y horas de sol**: evolución diaria frente a sus valores normales.
+- **Confort**: sensación térmica y punto de rocío en la observación actual, sensación térmica e índice UV (categorías de la OMS) en la predicción.
 
 Todo se ejecuta en la nube (GitHub Actions), sin instalar nada en tu ordenador.
 Se puede prototipar antes en Google Colab si quieres ver los datos sin montar aún la automatización.
