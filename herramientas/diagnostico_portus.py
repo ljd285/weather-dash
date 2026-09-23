@@ -137,9 +137,49 @@ def funciones_de_url():
         print("  [script en línea]", re.sub(r"\s+", " ", trozo)[:1200])
 
 
+def datos_reales():
+    """Averigua poemURL (base del servidor de datos) y pide los datos de la
+    boya: temperatura del agua y oleaje de las últimas 24 horas."""
+    from datetime import datetime, timedelta, timezone
+
+    base = f"{BASE}/PortusData/"
+    textos = [SESION.get(PAGINAS[0], timeout=30).text]
+    for nombre in ["js/main/rtChart.js", "js/common/commonChart.js", "js/common/interfazDefault.js",
+                   "js/common/controlesDefault.js", "js/resources/strings.js"]:
+        try:
+            textos.append(SESION.get(urljoin(base, nombre), timeout=30).text)
+        except requests.RequestException:
+            pass
+    poem = None
+    for texto in textos:
+        for m in re.finditer(r"poemURL\s*=\s*([^;]{1,200});", texto):
+            print("  poemURL =", m.group(1).strip())
+            valor = re.search(r"""["']([^"']+)["']""", m.group(1))
+            if valor and not poem:
+                poem = valor.group(1)
+    estaciones = re.search(r"var param_stations = (\{.*?\});", textos[0], re.S)
+    if estaciones:
+        try:
+            lista = json.loads(estaciones.group(1))
+            print("  Estación 2630:", lista.get(str(ESTACION)))
+            print("  Estaciones con 'Valencia':", {k: v for k, v in lista.items() if "alencia" in v.get("nombre", "")})
+        except ValueError as exc:
+            print("  param_stations no es JSON:", exc)
+    candidatos = [poem] if poem else []
+    candidatos += [f"{BASE}/portussvr", f"{BASE}/PortusData", f"{BASE}"]
+    ahora = datetime.now(timezone.utc)
+    desde = ahora - timedelta(hours=24)
+    rango = f"&from={desde:%Y%m%d@%H}00&to={ahora:%Y%m%d@%H}00"
+    for candidato in dict.fromkeys(c for c in candidatos if c):
+        url_base = candidato if candidato.startswith("http") else urljoin(f"{BASE}/PortusData/", candidato)
+        for params in ["WaterTemp", "Hm0,Tp,MeanDir,WaterTemp"]:
+            print(f"\n  --- {url_base} params={params}")
+            resumir(f"{url_base}/portus/StationData?code={ESTACION}&params={params}{rango}", 2500)
+
+
 def main():
-    print("== Cómo construye la gráfica la dirección de los datos ==")
-    funciones_de_url()
+    print("== Datos reales de la boya ==")
+    datos_reales()
     print("\n== robots.txt ==")
     resumir(f"{BASE}/robots.txt", 2000)
 
