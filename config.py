@@ -34,6 +34,11 @@ comunidad autónoma (61 Andalucía, 62 Aragón, 63 Asturias, 64 Baleares,
 estación, tal como aparece en el mapa de https://www.aemet.es/es/eltiempo/
 prediccion/avisos (también vale su código numérico de 6 cifras). Si se deja
 en None, no se muestran avisos para esa estación.
+
+El campo opcional 'mar' ({"lat": ..., "lon": ...}) es un punto en el mar,
+frente a la costa, donde se consulta la temperatura del agua (modelo de
+Copernicus vía Open-Meteo). Conviene que esté a unos kilómetros de la orilla
+para que caiga en una celda de mar del modelo. Sin él, no se muestra.
 """
 
 STATIONS = [
@@ -51,6 +56,7 @@ STATIONS = [
         "lon": -0.3663888889,
         "area_avisos": "77",        # Comunitat Valenciana
         "zona_avisos": "Litoral norte de Valencia",
+        "mar": {"lat": 39.46, "lon": -0.28},  # frente a la playa de la Malva-rosa
     },
     {
         "nombre": "Valencia Aeropuerto",
@@ -62,6 +68,7 @@ STATIONS = [
         "lon": -0.474722,
         "area_avisos": "77",
         "zona_avisos": "Litoral norte de Valencia",
+        "mar": {"lat": 39.46, "lon": -0.28},  # frente a la playa de la Malva-rosa
     },
     # Ejemplo de cómo añadir otra estación en el futuro:
     # {
