@@ -610,7 +610,14 @@ def construir_tarjetas_anomalia(df_hist, normales_registros):
         for etiqueta, color, valor, diferencia in filas
     )
     titulo = f'<h3 class="subtitulo">Comparado con la media histórica de {NOMBRES_MES[mes]} ({anio})</h3>'
-    return f'{titulo}<div class="tarjetas">{tarjetas}</div>'
+    explicacion = (
+        '<p class="aviso">Compara el último mes ya completo con la media histórica de AEMET '
+        'para ese mismo mes en esta estación (no el mes en curso, para no comparar un mes a '
+        'medias). ▲ Máx y ▼ Mín, arriba, no aparecen aquí: cada tarjeta muestra el valor '
+        'medio del mes y su diferencia con lo habitual — positivo es por encima de lo '
+        'normal, negativo por debajo.</p>'
+    )
+    return f'{titulo}{explicacion}<div class="tarjetas">{tarjetas}</div>'
 
 def construir_recuadro_extremos(df, variables):
     """Tarjetas con el valor más alto y más bajo de cada variable de
