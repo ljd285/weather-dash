@@ -350,21 +350,40 @@ def _texto_barras(serie, sufijo):
     return [f"{v:.0f}{sufijo}" if pd.notna(v) else "" for v in serie]
 
 
+def _rangeselector():
+    """Botones de rango rápido (7d/30d/90d/Todo) para el eje de fechas de
+    los gráficos históricos. No pide nada nuevo a AEMET: solo recorta la
+    vista sobre los datos que ya están cargados en el gráfico."""
+    return dict(
+        buttons=[
+            dict(count=7, label="7d", step="day", stepmode="backward"),
+            dict(count=30, label="30d", step="day", stepmode="backward"),
+            dict(count=90, label="90d", step="day", stepmode="backward"),
+            dict(step="all", label="Todo"),
+        ],
+        bgcolor="#EEEEEE",
+        activecolor=MATERIAL["indigo"],
+        font=dict(color=MATERIAL["texto"], size=11),
+    )
+
+
 def construir_graficos_historico(df):
     """Devuelve una lista de fragmentos HTML, uno por variable (temperatura,
     precipitación, viento, humedad), cada uno pensado para ocupar el ancho
-    completo de la página (en vez de un único gráfico con 4 paneles)."""
+    completo de la página (en vez de un único gráfico con 4 paneles). Cada
+    uno incluye botones de rango rápido (7d/30d/90d/Todo)."""
     if df.empty:
         return ['<p class="aviso">No se pudieron cargar datos históricos en esta ejecución.</p>']
 
     graficos = []
     config = {"responsive": True}
-    layout_comun = dict(template="plotly_white", height=320, margin=dict(t=50, b=40, l=50, r=20))
+    layout_comun = dict(template="plotly_white", height=360, margin=dict(t=70, b=40, l=50, r=20))
 
     # Temperatura
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["fecha"], y=df["tmax"], name="Máxima", line=dict(color=MATERIAL["rojo"], width=2)))
     fig.add_trace(go.Scatter(x=df["fecha"], y=df["tmin"], name="Mínima", line=dict(color=MATERIAL["azul"], width=2)))
+    fig.update_xaxes(rangeselector=_rangeselector())
     fig.update_yaxes(range=[5, 45], title="°C")
     fig.update_layout(title="Temperatura", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -373,6 +392,7 @@ def construir_graficos_historico(df):
     if "prec" in df.columns:
         fig = go.Figure()
         fig.add_trace(go.Bar(x=df["fecha"], y=df["prec"], name="Precipitación", marker_color=MATERIAL["azul_claro"]))
+        fig.update_xaxes(rangeselector=_rangeselector())
         fig.update_yaxes(range=[0, 50], title="mm")
         fig.update_layout(title="Precipitación", showlegend=False, **layout_comun)
         graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -383,6 +403,7 @@ def construir_graficos_historico(df):
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["velmedia"], name="Vel. media", line=dict(color=MATERIAL["indigo"], width=2)))
     if "racha" in df.columns:
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha"], name="Racha máx.", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")))
+    fig.update_xaxes(rangeselector=_rangeselector())
     fig.update_yaxes(range=[0, 80], title="km/h")
     fig.update_layout(title="Viento", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -393,6 +414,7 @@ def construir_graficos_historico(df):
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["hrmax"], name="Humedad máx.", line=dict(color=MATERIAL["teal"], width=2)))
     if "hrmin" in df.columns:
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["hrmin"], name="Humedad mín.", line=dict(color=MATERIAL["verde"], width=2)))
+    fig.update_xaxes(rangeselector=_rangeselector())
     fig.update_yaxes(range=[0, 100], title="%")
     fig.update_layout(title="Humedad relativa", legend=dict(orientation="h", y=-0.25), **layout_comun)
     graficos.append(fig.to_html(full_html=False, include_plotlyjs=False, config=config))
@@ -895,6 +917,10 @@ footer {{ margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; 
                     actualizacion[clave + '.gridcolor'] = c.rejilla;
                     actualizacion[clave + '.linecolor'] = c.rejilla;
                     actualizacion[clave + '.zerolinecolor'] = c.rejilla;
+                    if (div.layout[clave] && div.layout[clave].rangeselector) {{
+                        actualizacion[clave + '.rangeselector.bgcolor'] = c.rejilla;
+                        actualizacion[clave + '.rangeselector.font.color'] = c.texto;
+                    }}
                 }}
             }});
             if (div.layout.annotations && div.layout.annotations.length) {{
