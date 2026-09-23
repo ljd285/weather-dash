@@ -281,15 +281,33 @@ def obtener_observaciones(idema_obs):
 DIAS_OBSERVACIONES = 10  # cuántos días de lecturas horarias se conservan
 
 
+def _fint_utc(valor):
+    """Hora de una lectura de AEMET ("fint") como Timestamp UTC sin zona, o
+    None. AEMET la da con zona ("2026-09-23T18:00:00+0000"); se aceptan
+    también otras formas (+00:00, Z o sin zona, que se toma como UTC)."""
+    try:
+        momento = pd.Timestamp(valor)
+    except (ValueError, TypeError):
+        return None
+    if pd.isna(momento):
+        return None
+    return momento.tz_convert("UTC").tz_localize(None) if momento.tzinfo is not None else momento
+
+
 def acumular_observaciones(guardadas, nuevas, ahora=None):
     """Suma las lecturas nuevas a las guardadas en ejecuciones anteriores
     (sin duplicar horas) y descarta las de más de DIAS_OBSERVACIONES días.
     AEMET solo da las últimas 24 horas; acumulándolas se pueden calcular los
     días que aún no ha publicado como valores diarios validados."""
-    por_hora = {r["fint"]: r for r in guardadas or [] if r.get("fint")}
-    por_hora.update({r["fint"]: r for r in nuevas or [] if r.get("fint")})
-    ahora = ahora or datetime.now(timezone.utc).replace(tzinfo=None)
-    limite = (ahora - timedelta(days=DIAS_OBSERVACIONES)).strftime("%Y-%m-%dT%H:%M:%S")
+    # Se indexa por la hora ya normalizada, para no duplicar la misma lectura
+    # si llega escrita de otra forma.
+    por_hora = {}
+    for lectura in list(guardadas or []) + list(nuevas or []):
+        momento = _fint_utc(lectura.get("fint"))
+        if momento is not None:
+            por_hora[momento] = lectura
+    ahora = ahora or _ahora_utc()
+    limite = pd.Timestamp(ahora) - pd.Timedelta(days=DIAS_OBSERVACIONES)
     return [por_hora[k] for k in sorted(por_hora) if k >= limite]
 
 
@@ -297,7 +315,7 @@ def _observaciones_a_dataframe(observaciones):
     df = pd.DataFrame(observaciones or [])
     if df.empty or "fint" not in df.columns:
         return pd.DataFrame()
-    df["fint"] = pd.to_datetime(df["fint"], errors="coerce")
+    df["fint"] = pd.to_datetime(df["fint"].map(_fint_utc), errors="coerce")
     for col in ["ta", "tamax", "tamin", "prec", "vmax"]:
         df[col] = pd.to_numeric(df[col], errors="coerce") if col in df.columns else float("nan")
     return df.dropna(subset=["fint"]).sort_values("fint")
@@ -1584,7 +1602,7 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None):
     hora, aviso_antiguedad = None, ""
     if lectura.get("fint"):
         try:
-            momento = datetime.strptime(lectura["fint"], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+            momento = _fint_utc(lectura["fint"]).to_pydatetime().replace(tzinfo=timezone.utc)
             hora = _hora_local(momento, "%d/%m a las %H:%M")
             horas = (datetime.now(timezone.utc) - momento).total_seconds() / 3600
             if horas > HORAS_OBSERVACION_ANTIGUA:
@@ -1592,7 +1610,7 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None):
                     f'<p class="aviso aviso-antiguo">⚠ La última observación de la estación es de hace '
                     f"{horas:.0f} horas: los valores de «ahora» pueden no reflejar el tiempo actual.</p>"
                 )
-        except ValueError:
+        except (ValueError, AttributeError):  # AttributeError: _fint_utc devolvió None
             hora = lectura["fint"]
 
     def fmt(valor, unidad, decimales=1):

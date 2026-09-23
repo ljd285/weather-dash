@@ -43,3 +43,22 @@ def test_minigrafico_y_cambio_en_24_horas():
     assert svg.startswith("<svg") and "polyline" in svg
     assert cambio == "+0,0 °C que hace 24 h"  # la serie de prueba se repite cada 24 h
     assert f.construir_minigrafico(obs[:2]) == ("", "")
+
+
+@pytest.mark.parametrize("sufijo", ["+0000", "+00:00", "Z", ""])
+def test_horas_de_aemet_con_o_sin_zona_horaria(sufijo):
+    """AEMET da "fint" con zona ("2026-09-19T01:00:00+0000"); no debe romper nada."""
+    obs = [dict(r, fint=r["fint"] + sufijo) for r in lecturas(datetime(2026, 9, 19, 1), 24 * 3 + 5, prec=0.5)]
+    df = f.dias_provisionales(obs, pd.Timestamp("2026-09-18"))
+    assert list(df["fecha"].dt.day) == [19, 20, 21]
+    svg, cambio = f.construir_minigrafico(obs)
+    assert svg and cambio
+    acumuladas = f.acumular_observaciones(obs[:10], [dict(obs[5], fint=obs[5]["fint"].replace(sufijo, "") or obs[5]["fint"])],
+                                          ahora=datetime(2026, 9, 22, 12))
+    assert len(acumuladas) == 10  # la misma hora con otro formato no se duplica
+
+
+@pytest.mark.parametrize("fint", ["2026-09-23T18:00:00+0000", "2026-09-23T18:00:00"])
+def test_tarjeta_ahora_con_hora_de_aemet(fint):
+    html = f.construir_tarjetas_kpi({"fint": fint, "ta": 25.0, "hr": 60})
+    assert "Última observación: 23/09 a las 20:00 (hora local)" in html  # 18 UTC = 20 h en verano
