@@ -221,10 +221,7 @@ def obtener_normales(idema):
         try:
             with open(ruta, encoding="utf-8") as f:
                 registros_cache = json.load(f)
-            print(
-                f"Normales de {idema} leídos de caché: {len(registros_cache)} registro(s). "
-                f"Campos y valores del primer registro: {registros_cache[0] if registros_cache else 'ninguno'}"
-            )
+            print(f"Normales de {idema} leídos de caché: {len(registros_cache)} registro(s).")
             return registros_cache
         except (json.JSONDecodeError, OSError) as exc:
             print(f"Aviso: no se pudo leer la caché de normales {ruta}, se vuelve a descargar: {exc}")
@@ -233,22 +230,21 @@ def obtener_normales(idema):
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(ruta, "w", encoding="utf-8") as f:
         json.dump(registros, f, ensure_ascii=False, indent=0)
-    print(
-        f"Normales descargados para {idema}: {len(registros)} registro(s). "
-        f"Campos y valores del primer registro: {registros[0] if registros else 'ninguno'}"
-    )
+    print(f"Normales descargados para {idema}: {len(registros)} registro(s).")
     return registros
 
 
 def normales_por_mes(registros):
     """Convierte los registros de valores normales en un diccionario
-    {mes: registro} (mes de 1 a 12), descartando la fila anual (mes 13)."""
+    {mes: registro} (mes de 1 a 12), descartando la fila anual (mes 13).
+
+    El mes viene en el campo 'mes' (texto de dos dígitos, p. ej. '01' para
+    enero); confirmado directamente contra una respuesta real de AEMET."""
     por_mes = {}
     for r in registros or []:
-        fecha = str(r.get("fecha", ""))
         try:
-            mes = int(fecha.split("-")[-1])
-        except (ValueError, IndexError):
+            mes = int(r.get("mes", ""))
+        except (ValueError, TypeError):
             continue
         if 1 <= mes <= 12:
             por_mes[mes] = r
@@ -592,15 +588,15 @@ def construir_tarjetas_anomalia(df_hist, normales_registros):
         ))
 
     if "tmed" in df_mes.columns:
-        comparar("Temperatura media", MATERIAL["rojo"], df_mes["tmed"].mean(), _num(normal.get("tm_mes")), "°C")
+        comparar("Temperatura media", MATERIAL["rojo"], df_mes["tmed"].mean(), _num(normal.get("tm_mes_md")), "°C")
     if "prec" in df_mes.columns:
-        comparar("Precipitación total", MATERIAL["azul_claro"], df_mes["prec"].sum(), _num(normal.get("p_mes")), "mm", 0)
+        comparar("Precipitación total", MATERIAL["azul_claro"], df_mes["prec"].sum(), _num(normal.get("p_mes_md")), "mm", 0)
     if "hrmedia" in df_mes.columns:
-        comparar("Humedad media", MATERIAL["teal"], df_mes["hrmedia"].mean(), _num(normal.get("hr")), "%", 0)
+        comparar("Humedad media", MATERIAL["teal"], df_mes["hrmedia"].mean(), _num(normal.get("hr_md")), "%", 0)
     if "velmedia" in df_mes.columns:
-        # w_med (el normal) ya viene en km/h de AEMET; velmedia ya se convirtió
+        # w_med_md (el normal) ya viene en km/h de AEMET; velmedia ya se convirtió
         # de m/s a km/h en historico_a_dataframe, así que las unidades coinciden.
-        comparar("Viento medio", MATERIAL["indigo"], df_mes["velmedia"].mean(), _num(normal.get("w_med")), "km/h")
+        comparar("Viento medio", MATERIAL["indigo"], df_mes["velmedia"].mean(), _num(normal.get("w_med_md")), "km/h")
 
     if not filas:
         return ""
