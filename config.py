@@ -39,6 +39,11 @@ El campo opcional 'mar' ({"lat": ..., "lon": ...}) es un punto en el mar,
 frente a la costa, donde se consulta la temperatura del agua (modelo de
 Copernicus vía Open-Meteo). Conviene que esté a unos kilómetros de la orilla
 para que caiga en una celda de mar del modelo. Sin él, no se muestra.
+
+El campo opcional 'boya' ({"codigo": ..., "nombre": ...}) es una boya de
+Puertos del Estado (su código aparece en la web de Portus,
+https://portus.puertos.es). De ella salen la temperatura del agua medida y
+el oleaje; si no da temperatura, se usa la del modelo ('mar').
 """
 
 STATIONS = [
@@ -57,6 +62,7 @@ STATIONS = [
         "area_avisos": "77",        # Comunitat Valenciana
         "zona_avisos": "Litoral norte de Valencia",
         "mar": {"lat": 39.46, "lon": -0.28},  # frente a la playa de la Malva-rosa
+        "boya": {"codigo": 2630, "nombre": "Boya de Valencia"},  # Puertos del Estado, 39,51 N 0,20 E
     },
     {
         "nombre": "Valencia Aeropuerto",
@@ -69,6 +75,7 @@ STATIONS = [
         "area_avisos": "77",
         "zona_avisos": "Litoral norte de Valencia",
         "mar": {"lat": 39.46, "lon": -0.28},  # frente a la playa de la Malva-rosa
+        "boya": {"codigo": 2630, "nombre": "Boya de Valencia"},  # Puertos del Estado, 39,51 N 0,20 E
     },
     # Ejemplo de cómo añadir otra estación en el futuro:
     # {
