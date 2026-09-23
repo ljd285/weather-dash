@@ -1,0 +1,6 @@
+__pycache__/
+# Última predicción/observación buenas: se conservan entre ejecuciones del
+# workflow con actions/cache, no en el repositorio.
+data/ultimo/
+# La página la genera el workflow y se publica en gh-pages.
+docs/index.html
