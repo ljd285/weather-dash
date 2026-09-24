@@ -803,13 +803,26 @@ def _momento_aviso(momento):
 
 
 def construir_banner_avisos(avisos, zona, error=False, ahora=None):
-    """Banner con los avisos en vigor o próximos para la zona de la estación."""
+    """Recuadro de avisos de la zona de la estación, siempre bien visible
+    arriba: en verde si no hay ninguno, con un bloque por aviso (del color
+    de su nivel) si los hay."""
     enlace = '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos" target="_blank" rel="noopener">Ver en aemet.es</a>'
     zona_html = html.escape(zona)
+
+    def recuadro(clase, icono, titulo, detalle, contenido=""):
+        return (
+            f'<div class="avisos {clase}" role="status"><div class="avisos-resumen">'
+            f'<span class="avisos-icono" aria-hidden="true">{icono}</span>'
+            f'<div><p class="avisos-titulo">{titulo}</p><p class="avisos-detalle">{detalle}</p></div></div>'
+            f"{contenido}</div>"
+        )
+
     if error:
-        return f'<div class="avisos avisos-error">No se pudieron consultar los avisos de AEMET en esta actualización. {enlace}</div>'
+        return recuadro("avisos-error", "?", "No se pudieron consultar los avisos de AEMET",
+                        f"en esta actualización · {enlace}")
     if not avisos:
-        return f'<div class="avisos avisos-ninguno">✓ Sin avisos meteorológicos para {zona_html}.</div>'
+        return recuadro("avisos-ninguno", "✓", "Sin avisos meteorológicos",
+                        f"{zona_html} · AEMET Meteoalerta · {enlace}")
 
     ahora = ahora or datetime.now(timezone.utc)
     items = []
@@ -829,10 +842,10 @@ def construir_banner_avisos(avisos, zona, error=False, ahora=None):
             f'<span class="aviso-cuando">{cuando}</span></div>'
             f"{descripcion}</div>"
         )
-    return (
-        f'<div class="avisos"><h3 class="subtitulo">Avisos para {zona_html}</h3>'
-        f'{"".join(items)}<p class="aviso">Fuente: AEMET Meteoalerta. {enlace}</p></div>'
-    )
+    peor = max((a["nivel"] for a in avisos), key=NIVELES_AVISO.get)
+    numero = f"{len(avisos)} aviso{'s' if len(avisos) > 1 else ''} meteorológico{'s' if len(avisos) > 1 else ''}"
+    return recuadro(f"avisos-activos avisos-{peor}", "⚠", numero,
+                    f"{zona_html} · AEMET Meteoalerta · {enlace}", "".join(items))
 
 
 def normales_por_mes(registros):
@@ -2390,16 +2403,21 @@ def hora_observacion(lectura):
 
 
 def cabecera_seccion(titulo, fuente, resumen="", sello=""):
-    """Cabecera común de las tres secciones (ahora, próximos días,
-    histórico): título (el color lo pone el CSS de cada sección), de dónde
-    salen los datos y una línea de resumen."""
+    """Apertura de una de las tres secciones (ahora, próximos días,
+    histórico): un bloque plegable cuya cabecera lleva el título (el color
+    lo pone el CSS de cada sección), de dónde salen los datos y una línea de
+    resumen, que sigue a la vista con la sección plegada. Se cierra con
+    CIERRE_SECCION."""
     sello_html = f'<span class="sello">{sello}</span>' if sello else ""
-    resumen_html = f'<p class="resumen-seccion">{resumen}</p>' if resumen else ""
+    resumen_html = f'<span class="resumen-seccion">{resumen}</span>' if resumen else ""
     return (
-        f'<div class="cabecera-seccion"><div class="titulo-seccion">'
-        f'<h2>{titulo}</h2>{sello_html}</div>'
-        f'<p class="fuente-seccion">{fuente}</p>{resumen_html}</div>'
+        '<details class="plegable-seccion" open><summary class="cabecera-seccion">'
+        f'<h2 class="titulo-seccion"><span class="texto-titulo">{titulo}</span>{sello_html}</h2>'
+        f'<span class="fuente-seccion">{fuente}</span>{resumen_html}</summary><div class="cuerpo-seccion">'
     )
+
+
+CIERRE_SECCION = "</div></details></section>"
 
 
 def construir_recuadro_extremos(df, variables):
@@ -2683,7 +2701,7 @@ def main():
             seccion.append('</div><p class="aviso">Datos de Puertos del Estado (red de boyas de aguas profundas). '
                            'La boya está mar adentro: su temperatura es la del mar abierto, no la de la orilla. '
                            'El oleaje indica de dónde viene (p. ej. «del NE»).</p></details>')
-        seccion.append('</section>')
+        seccion.append(CIERRE_SECCION)
 
         seccion.append(f'<section class="seccion seccion-pronostico" data-seccion="pronostico" id="{slug}-pronostico">')
         seccion.append(cabecera_seccion("Próximos días", "Predicción de AEMET para el municipio", resumen_pronostico(df_pred)))
@@ -2699,7 +2717,7 @@ def main():
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_prediccion(df_pred))
         seccion.append('</div></details>')
-        seccion.append('</section>')
+        seccion.append(CIERRE_SECCION)
 
         mes_completo = _mes_completo_mas_reciente(df_hist_completo)
         fuente_historico = "Datos diarios de AEMET (se publican con unos días de retraso)"
@@ -2740,7 +2758,7 @@ def main():
                 f'<p class="descarga"><a href="datos/{_slug(nombre)}.csv" download>⬇ Descargar los datos diarios (CSV)</a> '
                 f'<span class="aviso">desde el 1 de octubre, separados por punto y coma</span></p>'
             )
-        seccion.append('</section>')
+        seccion.append(CIERRE_SECCION)
 
         seccion.append("</div>")
         bloques_html.append("".join(seccion))
