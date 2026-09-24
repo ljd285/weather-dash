@@ -1,9 +1,17 @@
-# Dashboard climatológico con AEMET OpenData
+# Meteo VLC
 
-Dashboard HTML que muestra, para una estación (por defecto Valencia):
+El tiempo en Valencia en una página: lo que marca ahora, lo que viene y cómo va el año, con datos de AEMET OpenData y Puertos del Estado.
+
+La página se divide en tres secciones, cada una con su color y a las que se salta desde la barra fija de arriba:
+
+- **Ahora** (verde azulado): lo medido en este momento por la estación y la boya.
+- **Próximos días** (azul): la predicción de AEMET. En los gráficos, las líneas discontinuas son previsión.
+- **Histórico y clima** (marrón): los datos diarios validados, la comparación con lo normal y los récords.
+
+Cada sección dice de dónde salen sus datos y resume lo esencial en una línea (p. ej. «entre 19° y 31° · lluvia probable el sábado»). Contenido, para una o varias estaciones (por defecto Valencia y el aeropuerto):
 
 - **Avisos**: avisos meteorológicos de AEMET (Meteoalerta) en vigor o próximos para la zona de la estación.
-- **Ahora**: última observación de la estación (temperatura, viento, humedad, precipitación).
+- **Ahora**: última observación de la estación (temperatura, viento, humedad, precipitación), agrupada en «Aire» y «Mar».
 - **Predicción**: temperatura, probabilidad de precipitación, viento y humedad a 7 días.
 - **Histórico**: temperatura (sobre la banda de valores normales), precipitación, viento y humedad de los últimos 90 días.
 - **Comparación con lo normal**: el último mes completo frente a los valores normales de la estación (el periodo de referencia se lee de los metadatos de AEMET), clasificado como hace AEMET (frío/normal/cálido, seco/normal/húmedo…).
@@ -14,7 +22,7 @@ Dashboard HTML que muestra, para una estación (por defecto Valencia):
 - **Presión y horas de sol**: evolución diaria frente a sus valores normales.
 - **Confort**: sensación térmica y punto de rocío en la observación actual, sensación térmica e índice UV (categorías de la OMS) en la predicción.
 - **Próximas 48 horas**: temperatura y sensación, precipitación, probabilidad de lluvia y de tormenta, y viento hora a hora, con la noche sombreada.
-- **Récords de la estación** para el mes en curso (máxima, mínima y lluvia en un día), y avisos cuando un día reciente o previsto los supera o se queda cerca.
+- **Récords de la estación** para el mes en curso (máxima, mínima y lluvia en un día), con una etiqueta en el día de la predicción que podría batirlos (o rozarlos) y una nota cuando un día reciente lo hizo.
 - **Mar**: temperatura del agua y oleaje (altura significativa, periodo y dirección) medidos por la **Boya de Valencia de Puertos del Estado**, con gráficos de las últimas 72 horas. Si la boya no da temperatura, se usa la del modelo de Copernicus (Open-Meteo). Se configura con los campos `boya` y `mar` de `config.py`.
 - **Días provisionales**: los últimos días, que AEMET aún no ha validado, se calculan con las observaciones horarias y se muestran con línea de puntos.
 - **Descarga de datos** en CSV (punto y coma y coma decimal, para Excel en español) y **enlace directo a cada estación** (`…/#valencia-aeropuerto`).

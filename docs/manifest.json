@@ -1,7 +1,7 @@
 {
-  "name": "Dashboard climatológico AEMET",
-  "short_name": "AEMET Dashboard",
-  "description": "Histórico, pronóstico y comparación con valores normales de AEMET OpenData.",
+  "name": "Meteo VLC",
+  "short_name": "Meteo VLC",
+  "description": "El tiempo en Valencia: lo que marca ahora, lo que viene y cómo va el año. Datos de AEMET y Puertos del Estado.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

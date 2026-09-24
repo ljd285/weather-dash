@@ -11,7 +11,8 @@
     } catch (e) {}
 })();
 </script>
-<title>Dashboard AEMET</title>
+<title>Meteo VLC</title>
+<meta name="description" content="El tiempo en Valencia: lo que marca ahora, lo que viene y cómo va el año. Datos de AEMET y Puertos del Estado.">
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,7 +23,7 @@
 <meta name="theme-color" content="#1E1E1E" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="AEMET Dashboard">
+<meta name="apple-mobile-web-app-title" content="Meteo VLC">
 <script src="${plotly_js_url}"></script>
 <script>if (window.Plotly) { ${locale_es_js} }</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -32,17 +33,28 @@ ${estilos}</style>
 </head>
 <body>
 <div class="contenedor">
-<div class="cabecera">
-<h1>Dashboard climatológico — AEMET OpenData</h1>
+<header class="cabecera">
+<div class="marca">
+<h1>Meteo VLC</h1>
+<p class="lema">El tiempo en Valencia · <span class="actualizado" data-generado="${generado_iso}">actualizado el ${generado_corto}</span></p>
+</div>
 <div class="controles-cabecera">
 ${selector}
 <button id="toggle-tema" class="boton-tema" aria-label="Cambiar de tema">🌙</button>
 </div>
+</header>
+<nav class="barra-secciones" aria-label="Secciones">
+<div class="pestanas">
+<a href="#${primera}-ahora" data-seccion="ahora" class="pestana pestana-ahora">Ahora</a>
+<a href="#${primera}-pronostico" data-seccion="pronostico" class="pestana pestana-pronostico">Próximos días</a>
+<a href="#${primera}-historico" data-seccion="historico" class="pestana pestana-historico">Histórico</a>
 </div>
-<p>Datos históricos (${dias_historico} días) y predicción a 7 días.</p>
-${mapa}
+</nav>
+<main>
 ${estaciones}
-<footer>Generado automáticamente el ${generado}. Fuente: AEMET OpenData.</footer>
+${mapa}
+</main>
+<footer>Actualizado el ${generado}. Datos: AEMET OpenData, Puertos del Estado y Copernicus (Open-Meteo).</footer>
 </div>
 <script>
 ${app_js}</script>
