@@ -55,3 +55,11 @@ def test_xml_suelto_sin_tar():
 def test_banner_sin_avisos_y_con_error():
     assert "Sin avisos" in f.construir_banner_avisos([], "Litoral norte de Valencia")
     assert "No se pudieron consultar" in f.construir_banner_avisos([], "Zona", error=True)
+
+
+def test_banner_con_avisos_toma_el_color_del_peor_nivel():
+    aviso = {"nivel": "amarillo", "evento": "Aviso amarillo por lluvias", "titular": "", "descripcion": "40 mm en 1 h",
+             "inicio": None, "fin": None, "zonas": []}
+    banner = f.construir_banner_avisos([aviso, dict(aviso, nivel="naranja", evento="Aviso naranja por tormentas")], "Zona")
+    assert "avisos-naranja" in banner and "2 avisos meteorológicos" in banner
+    assert banner.count('class="aviso-meteo') == 2

@@ -176,6 +176,8 @@
             if (!destino) return;
             // Sin tocar la URL: su #fragmento es el de la estación elegida.
             ev.preventDefault();
+            var plegable = destino.querySelector('details.plegable-seccion');
+            if (plegable && !plegable.open) plegable.open = true;
             destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
@@ -230,11 +232,37 @@
     setInterval(pintar, 60000);
 })();
 
+// Secciones plegables: cada visitante encuentra plegadas las que plegó la
+// última vez (la misma sección en todas las estaciones).
+(function() {
+    var clave = 'secciones-plegadas';
+    var plegadas = [];
+    try { plegadas = JSON.parse(localStorage.getItem(clave) || '[]'); } catch (e) {}
+    if (!Array.isArray(plegadas)) plegadas = [];
+    var bloques = document.querySelectorAll('section[data-seccion] > details.plegable-seccion');
+    bloques.forEach(function(bloque) {
+        var nombre = bloque.parentNode.getAttribute('data-seccion');
+        if (plegadas.indexOf(nombre) !== -1) bloque.open = false;
+        bloque.addEventListener('toggle', function() {
+            var i = plegadas.indexOf(nombre);
+            if (bloque.open && i !== -1) plegadas.splice(i, 1);
+            if (!bloque.open && i === -1) plegadas.push(nombre);
+            // Las demás estaciones siguen a la que se ha tocado.
+            bloques.forEach(function(otro) {
+                if (otro !== bloque && otro.parentNode.getAttribute('data-seccion') === nombre && otro.open !== bloque.open) otro.open = bloque.open;
+            });
+            try { localStorage.setItem(clave, JSON.stringify(plegadas)); } catch (e) {}
+        });
+    });
+})();
+
 // Al desplegar un bloque plegable, los gráficos de dentro recalculan su tamaño.
-document.querySelectorAll('details.bloque-plegable').forEach(function(bloque) {
+document.querySelectorAll('details.bloque-plegable, details.plegable-seccion').forEach(function(bloque) {
     bloque.addEventListener('toggle', function() {
         if (!bloque.open || !window.Plotly) return;
-        bloque.querySelectorAll('.plotly-graph-div').forEach(function(div) { Plotly.Plots.resize(div); });
+        bloque.querySelectorAll('.plotly-graph-div').forEach(function(div) {
+            if (div.offsetParent !== null) Plotly.Plots.resize(div);  // solo los que se ven
+        });
     });
 });
 

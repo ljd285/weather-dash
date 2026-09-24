@@ -14,10 +14,10 @@
     --sombra: rgba(0,0,0,0.12);
     --sombra-suave: rgba(0,0,0,0.08);
     --borde: rgba(0,0,0,0.08);
-    --color-ahora: #00796B;
+    --color-ahora: #00A13E;
     --color-pronostico: #1565C0;
     --color-historico: #795548;
-    --fondo-ahora: #E0F2F1;
+    --fondo-ahora: #DDF8E5;
     --fondo-pronostico: #E3F2FD;
     --fondo-historico: #EFEBE9;
 }
@@ -29,10 +29,10 @@
     --sombra: rgba(0,0,0,0.6);
     --sombra-suave: rgba(0,0,0,0.4);
     --borde: rgba(255,255,255,0.1);
-    --color-ahora: #4DB6AC;
+    --color-ahora: #3DDC84;
     --color-pronostico: #64B5F6;
     --color-historico: #BCAAA4;
-    --fondo-ahora: #122B28;
+    --fondo-ahora: #0E2C1A;
     --fondo-pronostico: #15263A;
     --fondo-historico: #29231F;
 }
@@ -89,16 +89,27 @@ h1 { font-size: 2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; colo
 .seccion-ahora { --color: var(--color-ahora); --tinte: var(--fondo-ahora); }
 .seccion-pronostico { --color: var(--color-pronostico); --tinte: var(--fondo-pronostico); }
 .seccion-historico { --color: var(--color-historico); --tinte: var(--fondo-historico); }
-.cabecera-seccion { margin-bottom: 0.75rem; }
-.titulo-seccion { display: flex; align-items: center; justify-content: space-between; gap: 0.25rem 1rem; flex-wrap: wrap; }
-.seccion h2 { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--color); border: 0; padding: 0; }
+/* Cada sección se pliega pulsando su cabecera; plegada, sigue a la vista
+   el resumen de una línea. */
+.plegable-seccion > summary { list-style: none; cursor: pointer; }
+.plegable-seccion > summary::-webkit-details-marker { display: none; }
+.cabecera-seccion { display: block; padding-bottom: 0.5rem; }
+.plegable-seccion[open] > .cabecera-seccion { margin-bottom: 0.5rem; }
+.titulo-seccion { display: flex; align-items: center; gap: 0.35rem 0.75rem; flex-wrap: wrap; margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--color); }
+.titulo-seccion::before {
+    content: ""; order: -1; width: 0.55rem; height: 0.55rem; margin: 0 0.15rem 0 0.1rem; flex-shrink: 0;
+    border-right: 3px solid var(--color); border-bottom: 3px solid var(--color);
+    transform: rotate(-45deg); transition: transform 0.15s;
+}
+.plegable-seccion[open] > summary .titulo-seccion::before { transform: rotate(45deg) translate(-2px, -2px); }
+.texto-titulo { margin-right: auto; }
 .sello {
     display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 500;
     color: var(--color); background: var(--superficie); border-radius: 999px; padding: 0.2rem 0.7rem;
 }
 .sello::before { content: ""; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--color); }
-.fuente-seccion { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }
-.resumen-seccion { margin: 0.4rem 0 0; font-size: 1.05rem; font-weight: 500; }
+.fuente-seccion { display: block; margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }
+.resumen-seccion { display: block; margin: 0.4rem 0 0; font-size: 1.05rem; font-weight: 500; }
 .nombre-estacion { font-size: 1.2rem; font-weight: 500; margin: 0 0 0.5rem; }
 .seccion-mapa .subtitulo { margin-top: 0; }
 h2 { font-size: 1.3rem; font-weight: 500; }
@@ -150,15 +161,33 @@ a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visib
 .record-cerca { background: #FFE0B2; color: #7A3E00; }
 :root[data-theme="dark"] .mapa-estaciones .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
 .mapa-estaciones { height: 220px; border-radius: 8px; margin: 0.5rem 0 1rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }
-.avisos { margin: 0.5rem 0 1rem; }
-.avisos .subtitulo { margin-top: 0; }
-/* Sin avisos, una línea discreta; con avisos, bloques de color bien visibles. */
-.avisos-ninguno, .avisos-error { padding: 0.1rem 0.25rem; font-size: 0.85rem; color: var(--texto-secundario); }
-.avisos-ninguno::first-letter { color: #2E7D32; }
-:root[data-theme="dark"] .avisos-ninguno::first-letter { color: #81C784; }
-.avisos a { color: inherit; }
+/* Avisos: siempre un recuadro destacado arriba; verde si no hay, del
+   color del peor nivel si los hay. */
+.avisos { margin: 0 0 1.25rem; border-radius: 10px; padding: 0.9rem 1rem; border-left: 8px solid var(--acento); background: var(--fondo-aviso); box-shadow: 0 1px 4px var(--sombra); }
+.avisos-resumen { display: flex; align-items: center; gap: 0.8rem; }
+.avisos-icono {
+    flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: 50%; display: grid; place-items: center;
+    background: var(--acento); color: #FFFFFF; font-size: 1.35rem; font-weight: 700;
+}
+.avisos-titulo { margin: 0; font-size: 1.2rem; font-weight: 700; }
+.avisos-detalle { margin: 0.15rem 0 0; font-size: 0.88rem; color: var(--texto-secundario); }
+.avisos a { color: inherit; font-weight: 500; }
+.avisos-ninguno { --acento: #2E7D32; --fondo-aviso: #E8F5E9; }
+.avisos-error { --acento: #607D8B; --fondo-aviso: #ECEFF1; }
+.avisos-amarillo { --acento: #F9A825; --fondo-aviso: #FFFDE7; }
+.avisos-naranja { --acento: #EF6C00; --fondo-aviso: #FFF3E0; }
+.avisos-rojo { --acento: #C62828; --fondo-aviso: #FFEBEE; }
+:root[data-theme="dark"] .avisos-ninguno { --acento: #43A047; --fondo-aviso: #16301A; }
+:root[data-theme="dark"] .avisos-error { --acento: #78909C; --fondo-aviso: #262D31; }
+:root[data-theme="dark"] .avisos-amarillo { --fondo-aviso: #332E12; }
+:root[data-theme="dark"] .avisos-naranja { --fondo-aviso: #36240F; }
+:root[data-theme="dark"] .avisos-rojo { --fondo-aviso: #3A1515; }
+.avisos-amarillo .avisos-icono { color: #212121; }
+.avisos-activos .avisos-resumen { margin-bottom: 0.75rem; }
+.avisos-activos .aviso-meteo:last-child { margin-bottom: 0; }
 .aviso-meteo { border-radius: 6px; padding: 0.7rem 0.9rem; margin-bottom: 0.5rem; border-left: 6px solid rgba(0,0,0,0.35); }
-.aviso-meteo p { margin: 0.35rem 0 0; font-size: 0.9rem; }
+.aviso-meteo p { margin: 0.35rem 0 0; font-size: 0.95rem; }
+.aviso-meteo strong { font-size: 1.05rem; }
 .aviso-cabecera { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; }
 .aviso-cuando { font-size: 0.85rem; }
 .nivel-amarillo { background: #FFEB3B; color: #212121; }
@@ -175,7 +204,7 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
     h1 { font-size: 1.6rem; }
     .lema { font-size: 0.85rem; }
     .seccion { padding: 0.8rem 0.75rem 0.25rem; scroll-margin-top: 4rem; }
-    .seccion h2 { font-size: 1.25rem; }
+    .titulo-seccion { font-size: 1.25rem; }
     .barra-secciones { margin: 0.75rem -0.25rem; padding: 0.4rem 0.25rem; }
     .pestanas { gap: 0.3rem; }
     .pestana { font-size: 0.85rem; padding: 0.45rem 0.2rem; }

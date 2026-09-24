@@ -42,7 +42,8 @@ def test_cabecera_y_hora_de_observacion():
     assert f.hora_observacion({"fint": "2026-09-23T18:00:00+0000"}) == "20:00"
     assert f.hora_observacion(None) is None
     cabecera = f.cabecera_seccion("Ahora", "Medido por AEMET", sello="Observado a las 20:00")
-    assert "<h2>Ahora</h2>" in cabecera and 'class="sello"' in cabecera and "resumen-seccion" not in cabecera
+    assert '<span class="texto-titulo">Ahora</span>' in cabecera and 'class="sello"' in cabecera
+    assert "resumen-seccion" not in cabecera and cabecera.startswith('<details class="plegable-seccion" open>')
 
 
 def test_tarjetas_ahora_agrupadas_en_aire_y_mar():
