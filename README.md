@@ -83,7 +83,7 @@ Esto te sirve para comprobar que la clave funciona y que los datos de Valencia s
 
 ## 5. Ejecutar el workflow
 
-- Se ejecuta solo, cada hora en el minuto 50 (lo puedes cambiar editando el `cron` en `.github/workflows/update_dashboard.yml`).
+- Se ejecuta solo, cada hora en el minuto 50 (lo puedes cambiar editando el `cron` en `.github/workflows/update_dashboard.yml`). Ojo: GitHub puede retrasar o saltarse estas ejecuciones programadas durante horas; para que sean puntuales, ver el apartado 8.
 - Para probarlo ya, sin esperar: pestaña **Actions** del repo → "Actualizar dashboard AEMET" → **Run workflow**.
 - Si falla, la pestaña Actions muestra el log paso a paso (útil para ver si el error viene de la clave, de un límite de peticiones, etc.).
 
@@ -122,6 +122,48 @@ El workflow **Notificar avisos AEMET** (`.github/workflows/avisos.yml`) revisa c
 - Para probarlo sin tocar GitHub: `AVISOS_SIMULACRO=1 python avisos_notificar.py` (con `AEMET_API_KEY` y `GITHUB_REPOSITORY` definidos).
 
 Es un complemento, no un sistema de emergencias: puede retrasarse o fallar (GitHub, AEMET, el correo). Ante avisos rojos, sigue los canales oficiales (AEMET, 112, ES-Alert).
+
+## 8. Actualizaciones puntuales con cron-job.org (recomendado)
+
+Las ejecuciones programadas de GitHub (`schedule`) son «lo mejor que se pueda»: con GitHub cargado se retrasan o se saltan, a veces durante horas. Para que el dashboard se actualice cada hora y los avisos se revisen cada 15 minutos de verdad, un servicio externo gratuito, [cron-job.org](https://cron-job.org), pide a GitHub que lance los workflows a su hora (evento `workflow_dispatch`, que no sufre esos retrasos). Las programaciones de GitHub se dejan como respaldo: si coinciden dos ejecuciones, la segunda espera a la primera (`concurrency`) y no se duplica nada.
+
+### 8.1. Token de GitHub (solo para lanzar workflows de este repositorio)
+
+1. <https://github.com/settings/personal-access-tokens/new> (Settings → Developer settings → Personal access tokens → *Fine-grained tokens* → *Generate new token*).
+2. **Token name**: `cron-job weather-dash`. **Expiration**: la que quieras (p. ej. 1 año; apúntate renovarlo, porque al caducar las llamadas fallarán con 401).
+3. **Repository access**: *Only select repositories* → `weather-dash`.
+4. **Permissions** → *Repository permissions* → **Actions: Read and write** (lo demás, sin acceso; *Metadata: Read* se añade solo).
+5. *Generate token* y copia el valor (`github_pat_…`): solo se muestra una vez. No lo subas al repositorio ni lo compartas.
+
+### 8.2. Las dos tareas en cron-job.org
+
+Date de alta en <https://console.cron-job.org/signup>, y en *Settings* pon la zona horaria que prefieras (da igual para estas tareas). Después, *Cronjobs* → *Create cronjob*, dos veces:
+
+| | Tarea 1: dashboard | Tarea 2: avisos |
+|---|---|---|
+| **Title** | Meteo VLC – dashboard | Meteo VLC – avisos |
+| **URL** | `https://api.github.com/repos/ljd285/weather-dash/actions/workflows/update_dashboard.yml/dispatches` | `https://api.github.com/repos/ljd285/weather-dash/actions/workflows/avisos.yml/dispatches` |
+| **Execution schedule** | *Custom* → minutos `50`, todas las horas, días, meses y días de la semana | *Custom* → minutos `3, 18, 33, 48`, todas las horas, días, meses y días de la semana |
+
+En la pestaña **Advanced** de cada una:
+
+- **Request method**: `POST`
+- **Request headers** (cuatro, con *Add header*):
+
+  | Key | Value |
+  |---|---|
+  | `Accept` | `application/vnd.github+json` |
+  | `Authorization` | `Bearer github_pat_…` (tu token, precedido de `Bearer` y un espacio) |
+  | `X-GitHub-Api-Version` | `2022-11-28` |
+  | `Content-Type` | `application/json` |
+
+- **Request body**: `{"ref":"main"}`
+- **Timeout**: el que venga por defecto sirve (GitHub responde al instante).
+- En **Notifications**, activa el aviso *if execution fails* para enterarte si el token caduca.
+
+Guarda y pulsa *Test run*: la respuesta correcta es **`204 No Content`** (y en la pestaña *Actions* de GitHub aparece una ejecución nueva con el evento `workflow_dispatch`). Si sale `401`, el token está mal copiado o caducado; `403`, le falta el permiso *Actions: Read and write*; `404`, la URL o el acceso al repositorio no son correctos; `422`, falta el cuerpo `{"ref":"main"}`.
+
+Minutos de GitHub Actions: en un repositorio público son gratis e ilimitados. En uno privado, estas ejecuciones (~1 min cada una) gastan cuota del plan gratuito (2.000 min/mes): 24 del dashboard + 96 de avisos al día superan esa cuota, así que en ese caso conviene espaciar los avisos (p. ej. cada 30 minutos).
 
 ## Notas técnicas
 
