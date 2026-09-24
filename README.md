@@ -15,7 +15,7 @@ Dashboard HTML que muestra, para una estación (por defecto Valencia):
 - **Confort**: sensación térmica y punto de rocío en la observación actual, sensación térmica e índice UV (categorías de la OMS) en la predicción.
 - **Próximas 48 horas**: temperatura y sensación, precipitación, probabilidad de lluvia y de tormenta, y viento hora a hora, con la noche sombreada.
 - **Récords de la estación** para el mes en curso (máxima, mínima y lluvia en un día), y avisos cuando un día reciente o previsto los supera o se queda cerca.
-- **Temperatura del mar** frente a la costa (modelo de Copernicus vía Open-Meteo; se configura con el campo `mar` de `config.py`).
+- **Mar**: temperatura del agua y oleaje (altura significativa, periodo y dirección) medidos por la **Boya de Valencia de Puertos del Estado**, con gráficos de las últimas 72 horas. Si la boya no da temperatura, se usa la del modelo de Copernicus (Open-Meteo). Se configura con los campos `boya` y `mar` de `config.py`.
 - **Días provisionales**: los últimos días, que AEMET aún no ha validado, se calculan con las observaciones horarias y se muestran con línea de puntos.
 - **Descarga de datos** en CSV (punto y coma y coma decimal, para Excel en español) y **enlace directo a cada estación** (`…/#valencia-aeropuerto`).
 
@@ -124,6 +124,7 @@ Es un complemento, no un sistema de emergencias: puede retrasarse o fallar (GitH
 - El histórico diario se guarda en `data/historico_<idema>.json` (y los normales en `data/normales_<idema>.json`), que el workflow sube al repositorio. En cada ejecución solo se piden a AEMET los días que falten en la ventana, incluidos los huecos que hubieran quedado de descargas anteriores.
 - Los récords se guardan en `data/extremos_<idema>.json` y se renuevan cada 30 días. El periodo de referencia de los normales se lee una vez de los metadatos de AEMET y se guarda en `data/normales_<idema>_metadatos.json`.
 - La última predicción y la última observación descargadas con éxito se guardan en `data/ultimo/` (fuera del repositorio; el workflow las conserva con `actions/cache`). Si AEMET falla en una ejecución, la página muestra esas copias con un aviso de su antigüedad en vez de quedarse vacía.
+- Los datos de la boya salen del servicio que usa la web de Portus (`poem.puertos.es/portus/StationData`), que no está documentado como API pública: si deja de responder, el dashboard sigue funcionando con la última copia buena y, después, con el modelo. Solo se usan los valores que Puertos del Estado marca como buenos (calidad 1). Fuente: Puertos del Estado.
 - Las versiones de `requirements.txt` están fijadas y la página carga la versión de plotly.js que corresponde al paquete de Python instalado. Al actualizar Plotly, comprueba que los gráficos se siguen viendo bien.
 
 ## Estructura del código

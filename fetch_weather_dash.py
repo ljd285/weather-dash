@@ -601,6 +601,80 @@ def obtener_temperatura_mar(lat, lon):
     }
 
 
+# --- Boya de Puertos del Estado (Portus) ----------------------------------
+
+URL_BOYA = "https://poem.puertos.es/portus/StationData"
+PARAMETROS_BOYA = ["WaterTemp", "Hm0", "Tp", "MeanDir"]
+HORAS_BOYA = 72
+# Una lectura de la boya más antigua que esto no se muestra como "ahora".
+HORAS_BOYA_ANTIGUA = 6
+
+
+def obtener_boya(codigo, ahora=None):
+    """Lecturas horarias de las últimas HORAS_BOYA horas de una boya de
+    Puertos del Estado: temperatura del agua (°C), altura significativa del
+    oleaje Hm0 (m), periodo de pico Tp (s) y dirección media de procedencia
+    del oleaje (°). Es el servicio que usa la web de Portus para sus gráficas
+    (no está documentado como API pública: si cambia, el dashboard sigue con
+    el modelo de temperatura del mar). Devuelve la respuesta tal cual."""
+    ahora = ahora or datetime.now(timezone.utc)
+    desde = ahora - timedelta(hours=HORAS_BOYA)
+    resp = requests.get(URL_BOYA, params={
+        "code": codigo, "params": ",".join(PARAMETROS_BOYA),
+        "from": f"{desde:%Y%m%d@%H}00", "to": f"{ahora:%Y%m%d@%H}00",
+    }, timeout=30, headers={"User-Agent": "weather-dash (dashboard personal en GitHub Pages)"})
+    resp.raise_for_status()
+    return resp.json()
+
+
+def boya_a_dataframe(crudo):
+    """Convierte la respuesta de Portus en un DataFrame con 'fecha' (UTC,
+    sin zona) y una columna por parámetro. La respuesta es
+    [["UTC", "Hm0 (m)", ...], [[segundos, [valor, calidad], ...], ...]]; solo
+    se conservan los valores con calidad 1 (dato bueno)."""
+    try:
+        cabecera, filas = crudo[0], crudo[1]
+    except (TypeError, IndexError, KeyError):
+        raise ValueError(f"respuesta de la boya con formato inesperado: {str(crudo)[:200]}") from None
+    nombres = [str(c).split(" (")[0] for c in cabecera[1:]]
+    registros = []
+    for fila in filas:
+        registro = {"fecha": pd.Timestamp(fila[0], unit="s")}
+        for nombre, dato in zip(nombres, fila[1:], strict=True):
+            valor = None
+            if isinstance(dato, (list, tuple)) and len(dato) >= 2 and dato[1] == 1:
+                valor = _num(dato[0])
+            registro[nombre] = valor
+        registros.append(registro)
+    df = pd.DataFrame(registros, columns=["fecha", *nombres])
+    for nombre in nombres:
+        df[nombre] = pd.to_numeric(df[nombre], errors="coerce")
+    return df.sort_values("fecha").reset_index(drop=True)
+
+
+def resumen_boya(df, ahora=None):
+    """Última lectura válida (de menos de HORAS_BOYA_ANTIGUA horas) de cada
+    variable, y la temperatura del agua 24 horas antes. None si no hay nada."""
+    if df is None or df.empty:
+        return None
+    ahora = pd.Timestamp(ahora or _ahora_utc())
+    reciente = df[df["fecha"] >= ahora - pd.Timedelta(hours=HORAS_BOYA_ANTIGUA)]
+    resumen = {}
+    for columna in PARAMETROS_BOYA:
+        if columna in reciente.columns and reciente[columna].notna().any():
+            fila = reciente[reciente[columna].notna()].iloc[-1]
+            resumen[columna] = float(fila[columna])
+            resumen[f"{columna}_hora"] = fila["fecha"]
+    if not resumen:
+        return None
+    if "WaterTemp_hora" in resumen:
+        objetivo = resumen["WaterTemp_hora"] - pd.Timedelta(hours=24)
+        cercanas = df[df["WaterTemp"].notna() & ((df["fecha"] - objetivo).abs() <= pd.Timedelta(hours=1))]
+        if not cercanas.empty:
+            resumen["WaterTemp_24h"] = float(cercanas.loc[(cercanas["fecha"] - objetivo).abs().idxmin(), "WaterTemp"])
+    return resumen
+
+
 # --- Avisos meteorológicos (Meteoalerta) --------------------------------
 
 NS_CAP = {"cap": "urn:oasis:names:tc:emergency:cap:1.2"}
@@ -1253,6 +1327,49 @@ def prediccion_horaria_a_dataframe(prediccion, ahora=None):
     return df, noches
 
 
+def construir_graficos_boya(df, nombre_boya):
+    """Gráficos de las últimas HORAS_BOYA horas de la boya: temperatura del
+    agua y altura significativa del oleaje (con periodo y dirección al pasar
+    el ratón). Las horas se muestran en hora local."""
+    if df is None or df.empty:
+        return []
+    datos = df.copy()
+    datos["hora"] = datos["fecha"].dt.tz_localize("UTC").dt.tz_convert(ZONA_HORARIA).dt.tz_localize(None)
+    layout_comun = dict(template="plotly_white", height=280, margin=dict(t=50, b=40, l=50, r=20), hovermode="x unified")
+    formato_x = dict(tickformat="%a %-d", hoverformat="%a %-d, %H h", dtick=24 * 3600 * 1000, tickangle=0)
+    graficos = []
+
+    if "WaterTemp" in datos.columns and datos["WaterTemp"].notna().any():
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=datos["hora"], y=datos["WaterTemp"], name="Temperatura del agua",
+                                 line=dict(color=MATERIAL["azul"], width=2), hovertemplate="%{y:.1f} °C"))
+        valores = datos["WaterTemp"].dropna()
+        fig.update_xaxes(**formato_x)
+        fig.update_yaxes(range=[valores.min() - 0.5, valores.max() + 0.5], title="°C")
+        # El nombre de la boya ya está en el título del bloque; aquí, títulos cortos para el móvil.
+        fig.update_layout(title="Temperatura del agua", showlegend=False, **layout_comun)
+        graficos.append(_html_grafico(fig))
+
+    if "Hm0" in datos.columns and datos["Hm0"].notna().any():
+        detalles = [
+            " · ".join(t for t in (
+                f"periodo {tp:.0f} s" if pd.notna(tp) else "",
+                f"del {_sector_viento(d)}" if pd.notna(d) and _sector_viento(d) else "",
+            ) if t) or "—"
+            for tp, d in zip(datos.get("Tp", pd.Series(index=datos.index)), datos.get("MeanDir", pd.Series(index=datos.index)), strict=True)
+        ]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=datos["hora"], y=datos["Hm0"], name="Altura significativa",
+                                 line=dict(color=MATERIAL["teal"], width=2), fill="tozeroy",
+                                 fillcolor="rgba(0,150,136,0.12)", customdata=detalles,
+                                 hovertemplate="%{y:.2f} m · %{customdata}"))
+        fig.update_xaxes(**formato_x)
+        fig.update_yaxes(range=_rango_eje([datos["Hm0"]], 0, 2, 0.3), title="m")
+        fig.update_layout(title="Oleaje: altura significativa", showlegend=False, **layout_comun)
+        graficos.append(_html_grafico(fig))
+    return graficos
+
+
 def construir_graficos_horarios(df, noches):
     """Gráficos de las próximas 48 horas: temperatura y sensación,
     precipitación, probabilidad de lluvia y de tormenta, y viento. La noche
@@ -1589,12 +1706,13 @@ def _sector_viento(grados):
 HORAS_OBSERVACION_ANTIGUA = 3
 
 
-def construir_tarjetas_kpi(lectura, mar=None, observaciones=None):
+def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nombre_boya="la boya"):
     """Tarjetas destacadas con las condiciones observadas más recientes:
     temperatura, viento, humedad y precipitación de la última hora, y la
-    temperatura del mar si se ha podido obtener (`mar`, ver
+    temperatura del mar y el oleaje. La temperatura del mar sale de la boya
+    (`boya`, ver resumen_boya) y, si no la hay, del modelo (`mar`, ver
     obtener_temperatura_mar)."""
-    if not lectura and not mar:
+    if not lectura and not mar and not boya:
         return ""
     lectura = lectura or {}
 
@@ -1649,11 +1767,29 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None):
         ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
         ("Precipitación (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
     ]
-    if mar:
+    fuente_mar = None
+    boya = boya or {}
+    if "WaterTemp" in boya:
+        fuente_mar = "boya"
+        detalle_mar = ""
+        if "WaterTemp_24h" in boya:
+            cambio = boya["WaterTemp"] - boya["WaterTemp_24h"]
+            detalle_mar = f"{'+' if cambio >= 0 else ''}{_es(cambio)} °C que hace 24 h"
+        kpis.append(("Temperatura del mar", MATERIAL["azul"], fmt(boya["WaterTemp"], "°C"), detalle_mar))
+    elif mar:
+        fuente_mar = "modelo"
         detalle_mar = ""
         if mar.get("hace_semana") is not None:
             detalle_mar = f"hace una semana {_es(mar['hace_semana'])} °C"
         kpis.append(("Temperatura del mar", MATERIAL["azul"], fmt(mar["ahora"], "°C"), detalle_mar))
+    if "Hm0" in boya:
+        detalles_ola = []
+        if "Tp" in boya:
+            detalles_ola.append(f"periodo {boya['Tp']:.0f} s")
+        sector = _sector_viento(boya.get("MeanDir"))
+        if sector:
+            detalles_ola.append(f"del {sector}")
+        kpis.append(("Oleaje (altura significativa)", MATERIAL["teal"], fmt(boya["Hm0"], "m"), " · ".join(detalles_ola)))
 
     tarjetas = "".join(
         f'<div class="tarjeta-kpi" style="border-top-color:{color};">'
@@ -1664,7 +1800,16 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None):
         for etiqueta, color, valor, detalle in kpis
     )
     nota_hora = f"Última observación: {hora} (hora local)." if hora else ""
-    if mar:
+    if boya:
+        hora_boya = max(v for k, v in boya.items() if k.endswith("_hora"))
+        momento = hora_boya.to_pydatetime().replace(tzinfo=timezone.utc)
+        nota_hora += (
+            f" Mar: {html.escape(nombre_boya)} (Puertos del Estado), mar abierto frente a la costa, "
+            f"lectura de las {_hora_local(momento, '%H:%M')}."
+        )
+        if fuente_mar == "modelo":
+            nota_hora += " La boya no da ahora temperatura del agua: se muestra la del modelo de Copernicus (Open-Meteo)."
+    elif fuente_mar == "modelo":
         nota_hora += " Mar: análisis del modelo de Copernicus (vía Open-Meteo) frente a la costa, no una medición."
     nota_hora = f'<p class="aviso">{nota_hora.strip()}</p>' if nota_hora else ""
     return f'{aviso_antiguedad}<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
@@ -2218,6 +2363,7 @@ def main():
 
     avisos_por_area = {}  # se descargan una sola vez por área, aunque la compartan varias estaciones
     mar_por_punto = {}  # ídem para la temperatura del mar
+    boya_por_codigo = {}  # ídem para las boyas
 
     for estacion in STATIONS:
         idema = estacion.get("idema")
@@ -2352,7 +2498,33 @@ def main():
         except Exception as exc:
             print(f"Aviso: no se pudieron obtener los récords de {nombre}: {exc}")
 
-        # Temperatura del mar en el punto de costa configurado.
+        # Boya de Puertos del Estado (temperatura del agua y oleaje medidos),
+        # con la última copia buena si Portus no responde.
+        df_boya, resumen = pd.DataFrame(), None
+        config_boya = estacion.get("boya")
+        if config_boya:
+            codigo = config_boya["codigo"]
+            if codigo not in boya_por_codigo:
+                crudo = None
+                try:
+                    print(f"Procesando boya {codigo} ({config_boya.get('nombre', '')})...")
+                    crudo = obtener_boya(codigo)
+                    df_nueva = boya_a_dataframe(crudo)
+                    if df_nueva.empty:
+                        raise ValueError("la boya no devolvió lecturas")
+                    _guardar_ultimo(f"boya_{codigo}", crudo)
+                except Exception as exc:
+                    print(f"Aviso: no se pudieron obtener los datos de la boya {codigo}: {exc}")
+                    crudo = _leer_ultimo(f"boya_{codigo}")[0]
+                try:
+                    boya_por_codigo[codigo] = boya_a_dataframe(crudo) if crudo else pd.DataFrame()
+                except ValueError as exc:
+                    print(f"Aviso: copia guardada de la boya {codigo} ilegible: {exc}")
+                    boya_por_codigo[codigo] = pd.DataFrame()
+            df_boya = boya_por_codigo[codigo]
+            resumen = resumen_boya(df_boya)
+
+        # Temperatura del mar del modelo (reserva si la boya no da temperatura).
         mar = None
         punto_mar = estacion.get("mar")
         if punto_mar:
@@ -2377,7 +2549,16 @@ def main():
                 '<p class="aviso aviso-antiguo">⚠ AEMET no respondió en esta actualización para '
                 + " ni para ".join(notas_antiguedad) + ".</p>"
             )
-        seccion.append(construir_tarjetas_kpi(lectura_actual, mar, observaciones))
+        nombre_boya = (config_boya or {}).get("nombre", "la boya")
+        seccion.append(construir_tarjetas_kpi(lectura_actual, mar, observaciones, resumen, nombre_boya))
+        graficos_boya = construir_graficos_boya(df_boya, nombre_boya)
+        if graficos_boya:
+            seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Mar: {html.escape(nombre_boya)} '
+                           f'(últimas {HORAS_BOYA} h)</summary><div class="graficos-apilados">')
+            seccion.extend(graficos_boya)
+            seccion.append('</div><p class="aviso">Datos de Puertos del Estado (red de boyas de aguas profundas). '
+                           'La boya está mar adentro: su temperatura es la del mar abierto, no la de la orilla. '
+                           'El oleaje indica de dónde viene (p. ej. «del NE»).</p></details>')
 
         # Orden: avisos y "ahora" arriba; después la predicción (48 horas y
         # 7 días) con fondo propio; al final el histórico, en bloques
