@@ -14,7 +14,12 @@
     --sombra: rgba(0,0,0,0.12);
     --sombra-suave: rgba(0,0,0,0.08);
     --borde: rgba(0,0,0,0.08);
-    --fondo-pronostico: #E8EAF6;
+    --color-ahora: #00796B;
+    --color-pronostico: #1565C0;
+    --color-historico: #795548;
+    --fondo-ahora: #E0F2F1;
+    --fondo-pronostico: #E3F2FD;
+    --fondo-historico: #EFEBE9;
 }
 :root[data-theme="dark"] {
     --fondo: #121212;
@@ -24,7 +29,12 @@
     --sombra: rgba(0,0,0,0.6);
     --sombra-suave: rgba(0,0,0,0.4);
     --borde: rgba(255,255,255,0.1);
-    --fondo-pronostico: #232B45;
+    --color-ahora: #4DB6AC;
+    --color-pronostico: #64B5F6;
+    --color-historico: #BCAAA4;
+    --fondo-ahora: #122B28;
+    --fondo-pronostico: #15263A;
+    --fondo-historico: #29231F;
 }
 body {
     font-family: "Roboto", -apple-system, Arial, sans-serif;
@@ -33,30 +43,79 @@ body {
     color: var(--texto);
 }
 .contenedor { max-width: 1100px; margin: 0 auto; }
-.cabecera { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-h1 { font-size: 1.6rem; font-weight: 500; margin: 0; }
+.cabecera { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem 1rem; flex-wrap: wrap; }
+h1 { font-size: 2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; color: var(--color-pronostico); }
+.lema { margin: 0.15rem 0 0; color: var(--texto-secundario); font-size: 0.95rem; }
+.actualizado-antiguo { color: #E65100; font-weight: 500; }
+:root[data-theme="dark"] .actualizado-antiguo { color: #FFB74D; }
 .controles-cabecera { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .boton-tema {
     background: var(--superficie); color: var(--texto); border: 1px solid var(--borde);
     border-radius: 50%; width: 44px; height: 44px; font-size: 1.3rem; line-height: 1;
     cursor: pointer; box-shadow: 0 1px 3px var(--sombra); flex-shrink: 0;
 }
-.selector-estacion {
-    background: var(--superficie); color: var(--texto); border: 1px solid var(--borde);
-    border-radius: 6px; padding: 0.55rem 0.75rem; font-size: 0.95rem; cursor: pointer;
-    box-shadow: 0 1px 3px var(--sombra);
+.selector-envoltorio {
+    display: inline-flex; align-items: center; gap: 0.4rem; background: var(--superficie);
+    border: 1px solid var(--borde); border-radius: 22px; padding: 0 0.4rem 0 0.8rem;
+    box-shadow: 0 1px 3px var(--sombra); font-size: 1.1rem;
 }
-h2 { font-size: 1.3rem; font-weight: 500; color: var(--md-indigo); border-bottom: 2px solid var(--md-indigo); padding-bottom: 0.3rem; }
+.selector-estacion {
+    background: transparent; color: var(--texto); border: 0; padding: 0.55rem 0.4rem;
+    font-size: 1.05rem; font-weight: 500; cursor: pointer; font-family: inherit;
+}
+.selector-estacion option { background: var(--superficie); color: var(--texto); }
+/* Barra con las tres secciones: queda fija arriba al bajar por la página. */
+.barra-secciones {
+    position: sticky; top: 0; z-index: 1000; margin: 1rem -0.5rem 1rem; padding: 0.5rem;
+    background: var(--fondo); box-shadow: 0 6px 6px -6px var(--sombra);
+}
+.pestanas { display: flex; gap: 0.5rem; }
+.pestana {
+    flex: 1 1 0; text-align: center; padding: 0.5rem 0.4rem; border-radius: 20px; text-decoration: none;
+    font-weight: 500; font-size: 0.95rem; border: 2px solid var(--color); color: var(--color);
+    background: var(--superficie); white-space: nowrap;
+}
+.pestana.activa { background: var(--color); color: var(--superficie); }
+.pestana-ahora { --color: var(--color-ahora); }
+.pestana-pronostico { --color: var(--color-pronostico); }
+.pestana-historico { --color: var(--color-historico); }
+/* Las tres secciones: cada una con su color y su fondo, para que no se
+   confunda lo medido con lo previsto ni con el histórico. */
+.seccion {
+    --color: var(--md-indigo); --tinte: var(--fondo);
+    background: var(--tinte); border-top: 5px solid var(--color); border-radius: 10px;
+    padding: 1rem 1.25rem 0.5rem; margin-bottom: 1.5rem; scroll-margin-top: 4.5rem;
+}
+.seccion-ahora { --color: var(--color-ahora); --tinte: var(--fondo-ahora); }
+.seccion-pronostico { --color: var(--color-pronostico); --tinte: var(--fondo-pronostico); }
+.seccion-historico { --color: var(--color-historico); --tinte: var(--fondo-historico); }
+.cabecera-seccion { margin-bottom: 0.75rem; }
+.titulo-seccion { display: flex; align-items: center; justify-content: space-between; gap: 0.25rem 1rem; flex-wrap: wrap; }
+.seccion h2 { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--color); border: 0; padding: 0; }
+.sello {
+    display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 500;
+    color: var(--color); background: var(--superficie); border-radius: 999px; padding: 0.2rem 0.7rem;
+}
+.sello::before { content: ""; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--color); }
+.fuente-seccion { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }
+.resumen-seccion { margin: 0.4rem 0 0; font-size: 1.05rem; font-weight: 500; }
+.nombre-estacion { font-size: 1.2rem; font-weight: 500; margin: 0 0 0.5rem; }
+.seccion-mapa .subtitulo { margin-top: 0; }
+h2 { font-size: 1.3rem; font-weight: 500; }
 .subtitulo { font-size: 1.05rem; font-weight: 500; color: var(--texto-secundario); margin-top: 1.5rem; }
-.estacion { background: var(--superficie); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }
+.estacion { margin-bottom: 1rem; }
 .tarjetas { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 1.5rem; }
 .tarjeta { flex: 1 1 200px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 0.8rem 1rem; box-shadow: 0 1px 3px var(--sombra); }
 .tarjeta h3 { margin: 0 0 0.4rem; font-size: 0.95rem; font-weight: 500; }
 .tarjeta p { margin: 0.2rem 0; font-size: 0.9rem; }
 .tarjeta .fecha { color: var(--texto-secundario); font-size: 0.8rem; }
 .aviso { color: var(--texto-secundario); font-style: italic; }
-.tarjetas-kpi { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.5rem 0 0.25rem; }
-.tarjeta-kpi { box-sizing: border-box; flex: 1 1 140px; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }
+/* Tarjetas de "Ahora": aire (4) y mar (2) en una fila en escritorio. */
+.grupos-kpi { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin: 0.25rem 0 0.25rem; }
+.grupos-kpi > .grupo-kpi:only-child { grid-column: 1 / -1; }
+.rotulo-grupo { margin: 0 0 0.35rem; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--texto-secundario); }
+.tarjetas-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; }
+.tarjeta-kpi { box-sizing: border-box; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }
 .tarjeta-kpi h3 { margin: 0 0 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--texto-secundario); }
 .valor-kpi { margin: 0; font-size: 1.7rem; font-weight: 700; }
 .detalle-kpi { margin: 0.3rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }
@@ -85,15 +144,18 @@ a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visib
 .uv-cat { display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }
 .uv-muestra { width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }
 .valor-dias { font-size: 1.6rem !important; font-weight: 700; margin: 0.1rem 0 !important; }
-.bloque-pronostico { background: var(--fondo-pronostico); border-radius: 8px; padding: 1rem 1rem 0.5rem; margin-bottom: 1.5rem; }
-.bloque-pronostico .subtitulo { margin-top: 0; }
+.dia-records { margin: 0.3rem 0 0 !important; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem; }
+.etiqueta-record { font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 0.1rem 0.5rem; cursor: help; }
+.record-supera { background: #C62828; color: #FFFFFF; }
+.record-cerca { background: #FFE0B2; color: #7A3E00; }
 :root[data-theme="dark"] .mapa-estaciones .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
-.mapa-estaciones { height: 320px; border-radius: 8px; margin: 1rem 0 1.5rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }
+.mapa-estaciones { height: 220px; border-radius: 8px; margin: 0.5rem 0 1rem; box-shadow: 0 1px 4px var(--sombra), 0 1px 2px var(--sombra-suave); }
 .avisos { margin: 0.5rem 0 1rem; }
 .avisos .subtitulo { margin-top: 0; }
-.avisos-ninguno, .avisos-error { padding: 0.6rem 0.9rem; border-radius: 6px; font-size: 0.9rem; }
-.avisos-ninguno { background: rgba(76,175,80,0.14); color: var(--texto); }
-.avisos-error { background: rgba(96,125,139,0.14); color: var(--texto); }
+/* Sin avisos, una línea discreta; con avisos, bloques de color bien visibles. */
+.avisos-ninguno, .avisos-error { padding: 0.1rem 0.25rem; font-size: 0.85rem; color: var(--texto-secundario); }
+.avisos-ninguno::first-letter { color: #2E7D32; }
+:root[data-theme="dark"] .avisos-ninguno::first-letter { color: #81C784; }
 .avisos a { color: inherit; }
 .aviso-meteo { border-radius: 6px; padding: 0.7rem 0.9rem; margin-bottom: 0.5rem; border-left: 6px solid rgba(0,0,0,0.35); }
 .aviso-meteo p { margin: 0.35rem 0 0; font-size: 0.9rem; }
@@ -110,13 +172,20 @@ a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visib
 footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; text-align: center; }
 @media (max-width: 640px) {
     body { padding: 1rem; }
-    h1 { font-size: 1.3rem; }
-    .estacion { padding: 1rem; }
-    .bloque-pronostico { padding: 0.75rem 0.75rem 0.25rem; }
-    .tarjeta, .tarjeta-kpi { flex-basis: 100%; }
-    .mapa-estaciones { height: 240px; }
+    h1 { font-size: 1.6rem; }
+    .lema { font-size: 0.85rem; }
+    .seccion { padding: 0.8rem 0.75rem 0.25rem; scroll-margin-top: 4rem; }
+    .seccion h2 { font-size: 1.25rem; }
+    .barra-secciones { margin: 0.75rem -0.25rem; padding: 0.4rem 0.25rem; }
+    .pestanas { gap: 0.3rem; }
+    .pestana { font-size: 0.85rem; padding: 0.45rem 0.2rem; }
+    .tarjeta { flex-basis: 100%; }
+    .tarjetas-kpi { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+    .tarjeta-kpi { padding: 0.7rem 0.5rem; }
+    .valor-kpi { font-size: 1.4rem; }
+    .mapa-estaciones { height: 200px; }
     .dias-pronostico { grid-template-columns: 1fr; gap: 0.35rem; }
-    .dia-pronostico { display: grid; grid-template-columns: 4.5rem 2.2rem 1fr auto; grid-template-areas: "nombre icono cielo temps" "nombre icono detalle detalle2" "nombre icono rango rango"; align-items: center; text-align: left; column-gap: 0.5rem; padding: 0.4rem 0.7rem; }
+    .dia-pronostico { display: grid; grid-template-columns: 4.5rem 2.2rem 1fr auto; grid-template-areas: "nombre icono cielo temps" "nombre icono detalle detalle2" "nombre icono rango rango" "nombre icono records records"; align-items: center; text-align: left; column-gap: 0.5rem; padding: 0.4rem 0.7rem; }
     .dia-nombre { grid-area: nombre; }
     .dia-icono { grid-area: icono; font-size: 1.6rem; }
     .dia-cielo { grid-area: cielo; min-height: 0; }
@@ -124,6 +193,10 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
     .dia-detalle:nth-of-type(5) { grid-area: detalle; }
     .dia-detalle:nth-of-type(6) { grid-area: detalle2; text-align: right; }
     .rango-semana { grid-area: rango; margin: 0.3rem 0 0.1rem; }
+    .dia-records { grid-area: records; justify-content: flex-start; }
+}
+@media (max-width: 900px) {
+    .grupos-kpi { grid-template-columns: 1fr; }
 }
 .minigrafico { display: block; width: 100%; max-width: 160px; height: 32px; margin: 0.4rem auto 0; }
 .descarga { margin: 0.5rem 0 1rem; font-size: 0.9rem; }

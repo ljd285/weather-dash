@@ -1241,6 +1241,9 @@ def _grafico_intensidad_lluvia(df, layout_comun):
 
 
 HORAS_PREDICCION_HORARIA = 48
+#: Trazo de las líneas de predicción: discontinuo, para distinguirlas de
+#: los datos medidos (boya, histórico), que van con línea continua.
+TRAZO_PREVISION = "dash"
 
 
 def _por_hora(lista):
@@ -1393,7 +1396,7 @@ def construir_graficos_horarios(df, noches):
     graficos = []
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["fecha"], y=df["temp"], name="Temperatura", line=dict(color=MATERIAL["rojo"], width=2),
+    fig.add_trace(go.Scatter(x=df["fecha"], y=df["temp"], name="Temperatura", line=dict(color=MATERIAL["rojo"], width=2, dash=TRAZO_PREVISION),
                              hovertemplate="%{y:.0f} °C"))
     series = [df["temp"]]
     if ((df["sens"] - df["temp"]).abs() >= 1).any():
@@ -1409,14 +1412,14 @@ def construir_graficos_horarios(df, noches):
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["fecha"], y=df["prob_precip"], name="Prob. de precipitación",
-                             line=dict(color=MATERIAL["azul_claro"], width=2, shape="hv"), hovertemplate="%{y:.0f} %"))
+                             line=dict(color=MATERIAL["azul_claro"], width=2, shape="hv", dash=TRAZO_PREVISION), hovertemplate="%{y:.0f} %"))
     if df["prob_tormenta"].fillna(0).gt(0).any():
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["prob_tormenta"], name="Prob. de tormenta",
-                                 line=dict(color=MATERIAL["morado"], width=2, shape="hv"), hovertemplate="%{y:.0f} %"))
+                                 line=dict(color=MATERIAL["morado"], width=2, shape="hv", dash=TRAZO_PREVISION), hovertemplate="%{y:.0f} %"))
     graficos.append(preparar(fig, "Probabilidad de lluvia y de tormenta", "%", [0, 100]))
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento"], name="Viento", line=dict(color=MATERIAL["indigo"], width=2),
+    fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento"], name="Viento", line=dict(color=MATERIAL["indigo"], width=2, dash=TRAZO_PREVISION),
                              customdata=df["dir"].fillna("—"), hovertemplate="%{y:.0f} km/h del %{customdata}"))
     if df["racha"].notna().any():
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha"], name="Racha", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot"),
@@ -1464,12 +1467,20 @@ def color_temperatura(t):
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
-def construir_tarjetas_pronostico(df):
+#: Etiqueta corta de cada récord para las tarjetas de la predicción.
+ETIQUETAS_RECORD = {"tmax": "de calor", "tmin": "de frío", "prec": "de lluvia"}
+
+
+def construir_tarjetas_pronostico(df, extremos=None):
     """Una tarjeta por día de la predicción: estado del cielo, máxima y
-    mínima, probabilidad de lluvia y viento. En pantallas estrechas cada
-    tarjeta se convierte en una fila."""
+    mínima, probabilidad de lluvia y viento, y una etiqueta si ese día
+    podría batir (o rozar) un récord mensual de la estación. En pantallas
+    estrechas cada tarjeta se convierte en una fila."""
     if df.empty:
         return ""
+    records = {}
+    for fecha, resultado, clave, texto in _records_en(df, extremos, prevision=True):
+        records.setdefault(fecha, []).append((resultado, clave, texto))
     hoy = pd.Timestamp(datetime.now(ZONA_HORARIA).date())
     # Rango de toda la semana, para situar la barra de cada día dentro de él.
     semana_min, semana_max = df["tmin"].min(), df["tmax"].max()
@@ -1498,6 +1509,12 @@ def construir_tarjetas_pronostico(df):
         if pd.notna(getattr(fila, "viento_max", None)):
             direccion = getattr(fila, "viento_dir", None)
             viento = f'<span aria-hidden="true">💨</span><span class="solo-lector">Viento:</span> {fila.viento_max:.0f} km/h' + (f" {html.escape(str(direccion))}" if direccion and direccion != "C" else "")
+        etiquetas = "".join(
+            f'<span class="etiqueta-record record-{resultado}" title="{html.escape(texto)}">'
+            f'{"🏆 Récord" if resultado == "supera" else "Casi récord"} {ETIQUETAS_RECORD[clave]}'
+            f'<span class="solo-lector">. {html.escape(texto)}</span></span>'
+            for resultado, clave, texto in records.get(fila.fecha, [])
+        )
         tarjetas.append(
             f'<div class="dia-pronostico">'
             f'<p class="dia-nombre">{nombre}</p>'
@@ -1507,7 +1524,8 @@ def construir_tarjetas_pronostico(df):
             f"{barra}"
             f'<p class="dia-detalle">{lluvia}</p>'
             f'<p class="dia-detalle">{viento}</p>'
-            f"</div>"
+            + (f'<p class="dia-records">{etiquetas}</p>' if etiquetas else "")
+            + "</div>"
         )
     return f'<div class="dias-pronostico">{"".join(tarjetas)}</div>'
 
@@ -1578,7 +1596,7 @@ def construir_graficos_prediccion(df):
     # Viento
     fig = go.Figure()
     if "viento_max" in df.columns:
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento_max"], name="Viento previsto", mode="lines+markers", line=dict(color=MATERIAL["indigo"], width=2)))
+        fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento_max"], name="Viento previsto", mode="lines+markers", line=dict(color=MATERIAL["indigo"], width=2, dash=TRAZO_PREVISION)))
     if "racha_max" in df.columns:
         fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha_max"], name="Racha prevista", mode="lines+markers", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")))
     lineas_de_dia(fig)
@@ -1761,12 +1779,13 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nom
         rocio = punto_de_rocio(ta, hr)
     detalle_humedad = f"rocío {rocio:.0f} °C · {confort_rocio(rocio)}" if rocio is not None else ""
 
-    kpis = [
-        ("Temperatura ahora", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), detalle_temperatura + minigrafico),
-        ("Viento ahora", MATERIAL["indigo"], fmt(viento_kmh, "km/h"), " · ".join(detalles_viento)),
-        ("Humedad ahora", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
-        ("Precipitación (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
+    kpis_aire = [
+        ("Temperatura", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), detalle_temperatura + minigrafico),
+        ("Viento", MATERIAL["indigo"], fmt(viento_kmh, "km/h"), " · ".join(detalles_viento)),
+        ("Humedad", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
+        ("Lluvia (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
     ]
+    kpis = []  # las del mar
     fuente_mar = None
     boya = boya or {}
     if "WaterTemp" in boya:
@@ -1775,13 +1794,13 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nom
         if "WaterTemp_24h" in boya:
             cambio = boya["WaterTemp"] - boya["WaterTemp_24h"]
             detalle_mar = f"{'+' if cambio >= 0 else ''}{_es(cambio)} °C que hace 24 h"
-        kpis.append(("Temperatura del mar", MATERIAL["azul"], fmt(boya["WaterTemp"], "°C"), detalle_mar))
+        kpis.append(("Temperatura del agua", MATERIAL["azul"], fmt(boya["WaterTemp"], "°C"), detalle_mar))
     elif mar:
         fuente_mar = "modelo"
         detalle_mar = ""
         if mar.get("hace_semana") is not None:
             detalle_mar = f"hace una semana {_es(mar['hace_semana'])} °C"
-        kpis.append(("Temperatura del mar", MATERIAL["azul"], fmt(mar["ahora"], "°C"), detalle_mar))
+        kpis.append(("Temperatura del agua", MATERIAL["azul"], fmt(mar["ahora"], "°C"), detalle_mar))
     if "Hm0" in boya:
         detalles_ola = []
         if "Tp" in boya:
@@ -1791,14 +1810,20 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nom
             detalles_ola.append(f"del {sector}")
         kpis.append(("Oleaje (altura significativa)", MATERIAL["teal"], fmt(boya["Hm0"], "m"), " · ".join(detalles_ola)))
 
-    tarjetas = "".join(
-        f'<div class="tarjeta-kpi" style="border-top-color:{color};">'
-        f"<h3>{etiqueta}</h3>"
-        f'<p class="valor-kpi">{valor}</p>'
-        + (f'<p class="detalle-kpi">{detalle}</p>' if detalle else "")
-        + "</div>"
-        for etiqueta, color, valor, detalle in kpis
-    )
+    def grupo(nombre, clase, lista):
+        """Tarjetas agrupadas (aire o mar), con su rótulo encima."""
+        if not lista:
+            return ""
+        tarjetas = "".join(
+            f'<div class="tarjeta-kpi" style="border-top-color:{color};">'
+            f"<h3>{etiqueta}</h3>"
+            f'<p class="valor-kpi">{valor}</p>'
+            + (f'<p class="detalle-kpi">{detalle}</p>' if detalle else "")
+            + "</div>"
+            for etiqueta, color, valor, detalle in lista
+        )
+        return (f'<div class="grupo-kpi {clase}"><p class="rotulo-grupo">{nombre}</p>'
+                f'<div class="tarjetas-kpi">{tarjetas}</div></div>')
     nota_hora = f"Última observación: {hora} (hora local)." if hora else ""
     if boya:
         hora_boya = max(v for k, v in boya.items() if k.endswith("_hora"))
@@ -1812,7 +1837,8 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nom
     elif fuente_mar == "modelo":
         nota_hora += " Mar: análisis del modelo de Copernicus (vía Open-Meteo) frente a la costa, no una medición."
     nota_hora = f'<p class="aviso">{nota_hora.strip()}</p>' if nota_hora else ""
-    return f'{aviso_antiguedad}<div class="tarjetas-kpi">{tarjetas}</div>{nota_hora}'
+    grupos = grupo("Aire", "grupo-aire", kpis_aire) + grupo("Mar", "grupo-mar", kpis)
+    return f'{aviso_antiguedad}<div class="grupos-kpi">{grupos}</div>{nota_hora}'
 
 
 #: (etiqueta, color, columna para el valor máximo, columna para el valor
@@ -2228,12 +2254,12 @@ def _comparar_con_record(valor, record, por_abajo, margen):
     return "cerca" if cerca else None
 
 
-def notas_records(df, extremos, prevision=False):
-    """Frases sobre días (del histórico o de la predicción) que superan o
-    se quedan cerca de un récord mensual de la estación."""
+def _records_en(df, extremos, prevision=False):
+    """(fecha, resultado, clave, frase) por cada día de `df` (histórico o
+    predicción) que supera o se queda cerca de un récord mensual de la
+    estación; `resultado` es 'supera' o 'cerca'."""
     if df.empty or not extremos:
-        return []
-    notas = []
+        return
     for clave, col, _, nombre, por_abajo, margen in RECORDS_MOSTRADOS:
         if clave not in extremos or col not in df.columns:
             continue
@@ -2250,12 +2276,18 @@ def notas_records(df, extremos, prevision=False):
             else:
                 texto = "se quedaría cerca del récord de" if prevision else "se quedó cerca del récord de"
             unidad = record["unidad"]
-            notas.append((
-                fecha, resultado,
+            yield (
+                fecha, resultado, clave,
                 f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha:%d/%m}: {nombre} de {_es(valor)} {unidad}"
                 f"{' prevista' if prevision and clave != 'prec' else ''}, {texto} {NOMBRES_MES[fecha.month]} "
                 f"({_es(record['valor'])} {unidad}{', ' + fecha_record if fecha_record else ''})",
-            ))
+            )
+
+
+def notas_records(df, extremos, prevision=False):
+    """Frases sobre días (del histórico o de la predicción) que superan o
+    se quedan cerca de un récord mensual de la estación."""
+    notas = [(fecha, resultado, texto) for fecha, resultado, _, texto in _records_en(df, extremos, prevision)]
     notas.sort(key=lambda n: (n[1] != "supera", -n[0].value))
     return [texto for _, _, texto in notas[:6]]
 
@@ -2288,6 +2320,85 @@ def construir_records(extremos, df_hist, mes):
         f'<h3 class="subtitulo">Récords de {NOMBRES_MES[mes]} en esta estación</h3>'
         f'<div class="tarjetas">{"".join(tarjetas)}</div>'
         + (f'<ul class="notas-records">{lista}</ul>' if lista else "")
+    )
+
+
+NOMBRES_DIA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+PROB_LLUVIA_PROBABLE = 50  # % a partir del cual el resumen dice "lluvia probable"
+PROB_LLUVIA_POSIBLE = 20
+
+
+def _nombre_dia(fecha, hoy):
+    dias = (fecha - hoy).days
+    return "hoy" if dias == 0 else "mañana" if dias == 1 else f"el {NOMBRES_DIA[fecha.weekday()]}"
+
+
+def resumen_pronostico(df):
+    """Una línea con lo esencial de la semana, para la cabecera de la
+    sección: rango de temperaturas y cuándo podría llover."""
+    if df.empty:
+        return ""
+    partes = []
+    if df["tmin"].notna().any() and df["tmax"].notna().any():
+        partes.append(f"entre {df['tmin'].min():.0f}° y {df['tmax'].max():.0f}°")
+    if "prob_precip" in df.columns and df["prob_precip"].notna().any():
+        hoy = pd.Timestamp(datetime.now(ZONA_HORARIA).date())
+        probable = df[df["prob_precip"] >= PROB_LLUVIA_PROBABLE]
+        if not probable.empty:
+            fila = probable.iloc[0]
+            partes.append(f"lluvia probable {_nombre_dia(fila['fecha'], hoy)} ({fila['prob_precip']:.0f} %)")
+        elif df["prob_precip"].max() >= PROB_LLUVIA_POSIBLE:
+            partes.append("alguna posibilidad de lluvia")
+        else:
+            partes.append("sin lluvia a la vista")
+    return " · ".join(partes)
+
+
+def resumen_historico(df_completo, mes_completo, normales_registros):
+    """Una línea con lo esencial del histórico, para la cabecera de la
+    sección: el último mes completo frente a lo normal y cómo va la lluvia
+    del año hidrológico."""
+    if df_completo.empty:
+        return ""
+    partes = []
+    if mes_completo and normales_registros:
+        anio, mes, df_mes = mes_completo
+        normal = normales_por_mes(normales_registros).get(mes, {})
+        t_normal = _num(normal.get("tm_mes_md"))
+        if t_normal is not None and "tmed" in df_mes.columns and df_mes["tmed"].notna().any():
+            diferencia = df_mes["tmed"].mean() - t_normal
+            signo = "+" if diferencia >= 0 else ""
+            partes.append(f"{NOMBRES_MES[mes].capitalize()}: {signo}{_es(diferencia)} °C respecto a lo normal")
+    if "prec" in df_completo.columns and normales_registros:
+        ultima = df_completo["fecha"].max().date()
+        inicio = inicio_anio_hidrologico(ultima)
+        datos = df_completo[df_completo["fecha"].dt.date >= inicio]
+        normal_hoy = precipitacion_normal_acumulada([ultima], normales_registros, inicio)
+        if normal_hoy and normal_hoy[0] > 0:
+            partes.append(f"lluvia del año hidrológico: {100 * datos['prec'].sum() / normal_hoy[0]:.0f} % de lo normal")
+    partes.append(f"datos validados hasta el {df_completo['fecha'].max():%d/%m}")
+    return " · ".join(partes)
+
+
+def hora_observacion(lectura):
+    """Hora local (HH:MM) de una observación de AEMET, o None."""
+    try:
+        momento = _fint_utc((lectura or {}).get("fint")).to_pydatetime().replace(tzinfo=timezone.utc)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    return _hora_local(momento, "%H:%M")
+
+
+def cabecera_seccion(titulo, fuente, resumen="", sello=""):
+    """Cabecera común de las tres secciones (ahora, próximos días,
+    histórico): título (el color lo pone el CSS de cada sección), de dónde
+    salen los datos y una línea de resumen."""
+    sello_html = f'<span class="sello">{sello}</span>' if sello else ""
+    resumen_html = f'<p class="resumen-seccion">{resumen}</p>' if resumen else ""
+    return (
+        f'<div class="cabecera-seccion"><div class="titulo-seccion">'
+        f'<h2>{titulo}</h2>{sello_html}</div>'
+        f'<p class="fuente-seccion">{fuente}</p>{resumen_html}</div>'
     )
 
 
@@ -2359,7 +2470,8 @@ def main():
     bloques_html = []
     estaciones_menu = []
     temperaturas_ahora = {}  # para mostrarlas en los marcadores del mapa
-    generado = _hora_local(datetime.now(timezone.utc), "%d/%m/%Y a las %H:%M (hora peninsular)")
+    momento_generado = datetime.now(timezone.utc)
+    generado = _hora_local(momento_generado, "%d/%m/%Y a las %H:%M (hora peninsular)")
 
     avisos_por_area = {}  # se descargan una sola vez por área, aunque la compartan varias estaciones
     mar_por_punto = {}  # ídem para la temperatura del mar
@@ -2542,51 +2654,60 @@ def main():
         slug = _slug(nombre)
         estaciones_menu.append((slug, nombre, estacion.get("lat"), estacion.get("lon")))
         temperaturas_ahora[slug] = (lectura_actual or {}).get("ta")
-        seccion = [f'<section class="estacion" data-estacion="{slug}"><h2>{html.escape(nombre)}</h2>']
+        # Con varias estaciones, el nombre ya está en el selector de arriba.
+        nombre_visible = "" if len(STATIONS) > 1 else f'<p class="nombre-estacion">{html.escape(nombre)}</p>'
+        seccion = [f'<div class="estacion" data-estacion="{slug}" role="region" aria-label="{html.escape(nombre)}">{nombre_visible}']
         seccion.append(banner_avisos)
         if notas_antiguedad:
             seccion.append(
                 '<p class="aviso aviso-antiguo">⚠ AEMET no respondió en esta actualización para '
                 + " ni para ".join(notas_antiguedad) + ".</p>"
             )
+
+        # Tres secciones, cada una con su color: lo medido ahora, la
+        # predicción y el histórico. Las cabeceras dicen de dónde sale cada
+        # cosa y resumen lo esencial en una línea.
         nombre_boya = (config_boya or {}).get("nombre", "la boya")
-        seccion.append(construir_tarjetas_kpi(lectura_actual, mar, observaciones, resumen, nombre_boya))
+        hora_obs = hora_observacion(lectura_actual)
+        fuente_ahora = "Medido por la estación de AEMET" + (
+            f" y la {html.escape(nombre_boya)} (Puertos del Estado)" if config_boya else "")
+        seccion.append(f'<section class="seccion seccion-ahora" data-seccion="ahora" id="{slug}-ahora">')
+        seccion.append(cabecera_seccion("Ahora", fuente_ahora, sello=f"Observado a las {hora_obs}" if hora_obs else ""))
+        seccion.append(construir_tarjetas_kpi(lectura_actual, mar, observaciones, resumen, nombre_boya)
+                       or '<p class="aviso">No hay observaciones disponibles en esta actualización.</p>')
         graficos_boya = construir_graficos_boya(df_boya, nombre_boya)
         if graficos_boya:
-            seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Mar: {html.escape(nombre_boya)} '
+            seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Evolución del mar '
                            f'(últimas {HORAS_BOYA} h)</summary><div class="graficos-apilados">')
             seccion.extend(graficos_boya)
             seccion.append('</div><p class="aviso">Datos de Puertos del Estado (red de boyas de aguas profundas). '
                            'La boya está mar adentro: su temperatura es la del mar abierto, no la de la orilla. '
                            'El oleaje indica de dónde viene (p. ej. «del NE»).</p></details>')
+        seccion.append('</section>')
 
-        # Orden: avisos y "ahora" arriba; después la predicción (48 horas y
-        # 7 días) con fondo propio; al final el histórico, en bloques
-        # plegables para que la página no se haga eterna en el móvil.
-        seccion.append('<div class="bloque-pronostico">')
-        notas_prevision = notas_records(df_pred, extremos, prevision=True)
-        if notas_prevision:
-            seccion.append(
-                '<ul class="notas-records">' + "".join(f"<li>{n}</li>" for n in notas_prevision) + "</ul>"
-            )
+        seccion.append(f'<section class="seccion seccion-pronostico" data-seccion="pronostico" id="{slug}-pronostico">')
+        seccion.append(cabecera_seccion("Próximos días", "Predicción de AEMET para el municipio", resumen_pronostico(df_pred)))
+        seccion.append(construir_tarjetas_pronostico(df_pred, extremos))
         graficos_horas = construir_graficos_horarios(df_horas, noches)
         if graficos_horas:
             seccion.append('<details class="bloque-plegable" open><summary class="subtitulo">Próximas 48 horas</summary>')
             seccion.append('<div class="graficos-apilados">')
             seccion.extend(graficos_horas)
             seccion.append('</div>')
-            seccion.append('<p class="aviso">La franja sombreada es la noche.</p></details>')
-        seccion.append('<h3 class="subtitulo">Pronóstico (7 días)</h3>')
-        seccion.append(construir_tarjetas_pronostico(df_pred))
+            seccion.append('<p class="aviso">La franja sombreada es la noche. Las líneas discontinuas son previsión.</p></details>')
         seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Gráficos de los 7 días</summary>')
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_prediccion(df_pred))
         seccion.append('</div></details>')
-        seccion.append('</div>')
+        seccion.append('</section>')
 
-        seccion.append('<h3 class="subtitulo">Histórico</h3>')
-        seccion.append(construir_recuadro_extremos(df_hist, VARIABLES_EXTREMOS_HISTORICO))
         mes_completo = _mes_completo_mas_reciente(df_hist_completo)
+        fuente_historico = "Datos diarios de AEMET (se publican con unos días de retraso)"
+        if normales:
+            fuente_historico += f" · normales {_texto_periodo(periodo)}"
+        seccion.append(f'<section class="seccion seccion-historico" data-seccion="historico" id="{slug}-historico">')
+        seccion.append(cabecera_seccion("Histórico y clima", fuente_historico,
+                                        resumen_historico(df_hist_completo, mes_completo, normales)))
         comparacion = [
             construir_tarjetas_anomalia(mes_completo, normales, periodo),
             construir_dias_senalados(mes_completo, normales),
@@ -2596,20 +2717,6 @@ def main():
             seccion.append('<details class="bloque-plegable" open><summary class="subtitulo">Comparación con lo normal y récords</summary>')
             seccion.extend(comparacion)
             seccion.append('</details>')
-        seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Gráficos de los últimos {DIAS_HISTORICO} días</summary>')
-        seccion.append('<div class="graficos-apilados">')
-        df_provisional = pd.DataFrame()
-        if not df_hist_completo.empty:
-            df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
-        seccion.extend(construir_graficos_historico(df_hist, normales, df_provisional))
-        if not df_hist_completo.empty:
-            escribir_csv(df_hist_completo, df_provisional, os.path.join("docs", "datos", f"{_slug(nombre)}.csv"))
-            seccion.append(
-                f'<p class="descarga"><a href="datos/{_slug(nombre)}.csv" download>⬇ Descargar los datos diarios (CSV)</a> '
-                f'<span class="aviso">desde el 1 de octubre, separados por punto y coma</span></p>'
-            )
-        seccion.append(construir_rosa_vientos(df_hist))
-        seccion.append('</div></details>')
 
         anio_hidrologico = construir_anio_hidrologico(df_hist_completo, normales)
         if anio_hidrologico:
@@ -2618,20 +2725,41 @@ def main():
             seccion.extend(anio_hidrologico)
             seccion.append('</div></details>')
 
-        seccion.append("</section>")
+        seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Últimos {DIAS_HISTORICO} días</summary>')
+        seccion.append(construir_recuadro_extremos(df_hist, VARIABLES_EXTREMOS_HISTORICO))
+        seccion.append('<div class="graficos-apilados">')
+        df_provisional = pd.DataFrame()
+        if not df_hist_completo.empty:
+            df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
+        seccion.extend(construir_graficos_historico(df_hist, normales, df_provisional))
+        seccion.append(construir_rosa_vientos(df_hist))
+        seccion.append('</div></details>')
+        if not df_hist_completo.empty:
+            escribir_csv(df_hist_completo, df_provisional, os.path.join("docs", "datos", f"{_slug(nombre)}.csv"))
+            seccion.append(
+                f'<p class="descarga"><a href="datos/{_slug(nombre)}.csv" download>⬇ Descargar los datos diarios (CSV)</a> '
+                f'<span class="aviso">desde el 1 de octubre, separados por punto y coma</span></p>'
+            )
+        seccion.append('</section>')
+
+        seccion.append("</div>")
         bloques_html.append("".join(seccion))
 
     selector_html = ""
     if len(estaciones_menu) > 1:
         opciones = "".join(f'<option value="{slug}">{html.escape(nombre)}</option>' for slug, nombre, _, _ in estaciones_menu)
-        selector_html = f'<select id="selector-estacion" class="selector-estacion" aria-label="Elegir estación">{opciones}</select>'
+        selector_html = (f'<label class="selector-envoltorio"><span aria-hidden="true">📍</span>'
+                         f'<select id="selector-estacion" class="selector-estacion" aria-label="Elegir estación">{opciones}</select></label>')
 
     estaciones_con_coordenadas = [
         (slug, nombre, lat, lon) for slug, nombre, lat, lon in estaciones_menu if lat is not None and lon is not None
     ]
     mapa_html = ""
     if estaciones_con_coordenadas:
-        mapa_html = '<div id="mapa-estaciones" class="mapa-estaciones"></div>'
+        # Al final de la página: con estaciones tan cercanas, el mapa sirve
+        # más para situarlas que para elegir entre ellas.
+        mapa_html = ('<section class="seccion-mapa"><h2 class="subtitulo">Dónde están las estaciones</h2>'
+                     '<div id="mapa-estaciones" class="mapa-estaciones"></div></section>')
     datos_mapa_js = json.dumps([
         {"slug": slug, "nombre": nombre, "lat": lat, "lon": lon,
          "temp": f"{_es(temperaturas_ahora[slug])} °C" if temperaturas_ahora.get(slug) is not None else None}
@@ -2643,8 +2771,10 @@ def main():
     app_js = _plantilla("app.js").substitute(rampa_racha=json.dumps(RAMPA_RACHA), datos_mapa=datos_mapa_js)
     pagina = _plantilla("pagina.html").substitute(
         estilos=estilos, app_js=app_js, plotly_js_url=PLOTLY_JS_URL, locale_es_js=LOCALE_ES_JS,
-        selector=selector_html, dias_historico=DIAS_HISTORICO, mapa=mapa_html,
+        selector=selector_html, mapa=mapa_html, primera=estaciones_menu[0][0] if estaciones_menu else "",
         estaciones="".join(bloques_html), generado=generado,
+        generado_iso=momento_generado.isoformat(timespec="seconds"),
+        generado_corto=_hora_local(momento_generado, "%d/%m a las %H:%M"),
     )
 
     with open("docs/index.html", "w", encoding="utf-8") as f:

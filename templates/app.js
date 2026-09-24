@@ -158,6 +158,78 @@
     }
 })();
 
+// Pestañas de secciones (Ahora · Próximos días · Histórico): llevan a la
+// sección de la estación que se está viendo y marcan en cuál se está.
+(function() {
+    var pestanas = document.querySelectorAll('.pestana');
+    if (!pestanas.length) return;
+
+    function estacionVisible() {
+        var visibles = Array.prototype.filter.call(document.querySelectorAll('.estacion'), function(e) { return e.style.display !== 'none'; });
+        return visibles[0] || null;
+    }
+
+    pestanas.forEach(function(p) {
+        p.addEventListener('click', function(ev) {
+            var estacion = estacionVisible();
+            var destino = estacion && estacion.querySelector('[data-seccion="' + p.getAttribute('data-seccion') + '"]');
+            if (!destino) return;
+            // Sin tocar la URL: su #fragmento es el de la estación elegida.
+            ev.preventDefault();
+            destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
+    var barra = document.querySelector('.barra-secciones');
+    function marcarActiva() {
+        var estacion = estacionVisible();
+        if (!estacion) return;
+        var limite = (barra ? barra.getBoundingClientRect().bottom : 0) + 40;
+        var activa = null;
+        estacion.querySelectorAll('[data-seccion]').forEach(function(sec) {
+            if (sec.getBoundingClientRect().top <= limite) activa = sec.getAttribute('data-seccion');
+        });
+        activa = activa || 'ahora';
+        pestanas.forEach(function(p) {
+            var es = p.getAttribute('data-seccion') === activa;
+            p.classList.toggle('activa', es);
+            if (es) p.setAttribute('aria-current', 'true'); else p.removeAttribute('aria-current');
+        });
+    }
+    var pendiente = false;
+    window.addEventListener('scroll', function() {
+        if (pendiente) return;
+        pendiente = true;
+        requestAnimationFrame(function() { pendiente = false; marcarActiva(); });
+    }, { passive: true });
+    document.addEventListener('change', marcarActiva);
+    marcarActiva();
+})();
+
+// "Actualizado hace X min", calculado al abrir la página (que es estática).
+(function() {
+    var el = document.querySelector('.actualizado[data-generado]');
+    if (!el) return;
+    var generado = new Date(el.getAttribute('data-generado'));
+    if (isNaN(generado)) return;
+    function pintar() {
+        var minutos = Math.round((Date.now() - generado.getTime()) / 60000);
+        if (minutos < 0) return;
+        var texto;
+        if (minutos < 1) texto = 'actualizado ahora mismo';
+        else if (minutos < 60) texto = 'actualizado hace ' + minutos + ' min';
+        else if (minutos < 48 * 60) {
+            var horas = Math.floor(minutos / 60);
+            texto = 'actualizado hace ' + horas + (horas === 1 ? ' hora' : ' horas');
+        } else return;  // tan antiguo, mejor la fecha exacta que ya trae la página
+        el.textContent = texto;
+        el.title = 'Generado el ' + generado.toLocaleString('es-ES');
+        el.classList.toggle('actualizado-antiguo', minutos > 150);
+    }
+    pintar();
+    setInterval(pintar, 60000);
+})();
+
 // Al desplegar un bloque plegable, los gráficos de dentro recalculan su tamaño.
 document.querySelectorAll('details.bloque-plegable').forEach(function(bloque) {
     bloque.addEventListener('toggle', function() {
