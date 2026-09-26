@@ -256,6 +256,35 @@
     });
 })();
 
+// Calendario frente a lo normal: botones de variable y detalle del día
+// (al pasar el ratón o al tocarlo en el móvil).
+document.querySelectorAll('.calendario').forEach(function(cal) {
+    var detalle = cal.querySelector('.cal-detalle');
+    var botones = cal.querySelectorAll('.cal-boton');
+    botones.forEach(function(boton) {
+        boton.addEventListener('click', function() {
+            botones.forEach(function(b) {
+                var activo = b === boton;
+                b.classList.toggle('activo', activo);
+                b.setAttribute('aria-pressed', activo ? 'true' : 'false');
+            });
+            cal.querySelectorAll('.cal-vista').forEach(function(v) {
+                v.hidden = v.getAttribute('data-vista') !== boton.getAttribute('data-vista');
+            });
+            if (detalle) detalle.innerHTML = '&nbsp;';
+        });
+    });
+    function mostrar(ev) {
+        var dia = ev.target.closest && ev.target.closest('.cal-rejilla .cal-dia[data-info]');
+        if (!dia || !detalle) return;
+        cal.querySelectorAll('.cal-dia.elegido').forEach(function(d) { d.classList.remove('elegido'); });
+        dia.classList.add('elegido');
+        detalle.textContent = dia.getAttribute('data-info');
+    }
+    cal.addEventListener('mouseover', mostrar);
+    cal.addEventListener('click', mostrar);
+});
+
 // Al desplegar un bloque plegable, los gráficos de dentro recalculan su tamaño.
 document.querySelectorAll('details.bloque-plegable, details.plegable-seccion').forEach(function(bloque) {
     bloque.addEventListener('toggle', function() {

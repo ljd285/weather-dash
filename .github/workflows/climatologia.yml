@@ -1,0 +1,56 @@
+name: Descargar climatología diaria
+
+# Descarga una sola vez los datos diarios de 1991-2020 de cada estación
+# (unas 60 peticiones por estación) para comparar cada día con lo normal
+# para su fecha. Se lanza a mano desde la pestaña Actions; si se corta,
+# al volver a lanzarlo sigue por donde iba.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+# Mismo grupo que la actualización del dashboard: las dos suben data/ al
+# repositorio y no deben pisarse.
+concurrency:
+  group: actualizar-dashboard
+  cancel-in-progress: false
+
+jobs:
+  descargar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Descargar la serie 1991-2020
+        id: descarga
+        continue-on-error: true   # lo descargado se guarda igualmente
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: python climatologia.py
+
+      - name: Guardar la serie en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/serie_1991_2020_*
+          if ! git diff --staged --quiet; then
+            git commit -m "Descargar climatología diaria 1991-2020 [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push
+          fi
+
+      - name: Avisar si quedó a medias
+        if: steps.descarga.outcome == 'failure'
+        run: |
+          echo "::warning::La descarga quedó a medias: vuelve a lanzar este workflow para completarla."
+          exit 1
