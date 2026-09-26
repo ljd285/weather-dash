@@ -33,6 +33,7 @@ import plotly.graph_objects as go
 import requests
 from plotly.offline import get_plotlyjs_version
 
+import climatologia
 from config import DIAS_HISTORICO, STATIONS
 
 BASE_URL = "https://opendata.aemet.es/opendata/api"
@@ -2177,6 +2178,159 @@ def construir_anio_hidrologico(df_completo, normales_registros):
     ]
 
 
+SEMANAS_CALENDARIO = 53
+
+#: Clases del calendario de temperatura según el percentil del día en su
+#: época (1991-2020, ±7 días): (percentil hasta el que llega, etiqueta).
+CLASES_PERCENTIL = [
+    (5, "muy frío"), (15, "frío"), (35, "algo frío"), (65, "normal"),
+    (85, "algo cálido"), (95, "cálido"), (None, "muy cálido"),
+]
+#: Clases del calendario de lluvia: (mm hasta los que llega, etiqueta).
+CLASES_LLUVIA_DIA = [(0.05, "sin lluvia"), (1, "< 1 mm"), (5, "1–5 mm"), (15, "5–15 mm"), (30, "15–30 mm"), (None, "≥ 30 mm")]
+VISTAS_CALENDARIO = [("tmax", "Máxima", "máx."), ("tmin", "Mínima", "mín."), ("prec", "Lluvia", "lluvia")]
+
+
+def _clase(valor, clases):
+    for i, (limite, _) in enumerate(clases):
+        if limite is None or valor < limite:
+            return i
+    return len(clases) - 1
+
+
+def datos_calendario(df_completo, df_provisional, fin=None):
+    """Días del calendario (las últimas SEMANAS_CALENDARIO semanas, de lunes
+    a domingo, hasta el último día con dato): fecha, tmax, tmin, prec y si
+    el dato es provisional (calculado con las observaciones horarias)."""
+    partes = []
+    for df, provisional in ((df_completo, False), (df_provisional, True)):
+        if df is not None and not df.empty:
+            cols = [c for c in ("fecha", *climatologia.VARIABLES) if c in df.columns]
+            partes.append(df[cols].assign(provisional=provisional))
+    if not partes:
+        return pd.DataFrame()
+    datos = pd.concat(partes).sort_values(["fecha", "provisional"])
+    datos["fecha"] = pd.to_datetime(datos["fecha"]).dt.normalize()
+    datos = datos.drop_duplicates("fecha", keep="first").set_index("fecha")
+    fin = pd.Timestamp(fin) if fin is not None else datos.index.max()
+    domingo = fin + pd.Timedelta(days=6 - fin.weekday())
+    inicio = domingo - pd.Timedelta(weeks=SEMANAS_CALENDARIO) + pd.Timedelta(days=1)
+    dias = pd.date_range(inicio, domingo, freq="D")
+    return datos.reindex(dias).rename_axis("fecha").reset_index()
+
+
+def construir_calendario(datos, clima):
+    """Calendario estilo GitHub (una columna por semana, una fila por día de
+    la semana) con cada día coloreado según cómo fue frente a lo normal
+    para su fecha: máxima y mínima por percentil en su época de 1991-2020,
+    y lluvia por cantidad. Tres vistas que se eligen con botones."""
+    if datos.empty:
+        return ""
+    if not clima:
+        return ('<p class="aviso">El calendario frente a lo normal necesita la climatología diaria de la '
+                'estación (1991–2020), que aún no se ha descargado: se hace una sola vez con el workflow '
+                '«Descargar climatología diaria».</p>')
+    hoy = pd.Timestamp(datetime.now(ZONA_HORARIA).date())
+    primer_lunes = datos["fecha"].min()
+    botones, vistas = [], []
+    for n, (var, nombre, abreviatura) in enumerate(VISTAS_CALENDARIO):
+        celdas = []
+        calidos = frios = con_dato = 0
+        anomalias = []
+        total = total_normal = dias_lluvia = dias_lluvia_normal = 0.0
+        medias, probabilidades = (climatologia.lluvia_normal(clima, datos["fecha"]) if var == "prec" else ([], []))
+        for i, fila in enumerate(datos.itertuples()):
+            fecha = fila.fecha
+            columna = (fecha - primer_lunes).days // 7 + 2
+            fila_grid = fecha.weekday() + 2
+            if fecha.day == 1:  # rótulo del mes, sobre la semana en que empieza
+                celdas.append(f'<span class="cal-mes" style="grid-column:{columna} / span 3">{NOMBRES_MES[fecha.month][:3]}</span>')
+            if fecha > hoy:
+                continue
+            valor = getattr(fila, var, None)
+            texto_fecha = f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha.day} {NOMBRES_MES[fecha.month][:3]} {fecha.year}"
+            clases = ["cal-dia"]
+            if valor is None or pd.isna(valor):
+                clases.append("sin-dato")
+                texto = f"{texto_fecha}: sin dato"
+            elif var == "prec":
+                clase = _clase(valor, CLASES_LLUVIA_DIA)
+                clases.append(f"q{clase}")
+                texto = f"{texto_fecha}: {_es(valor)} mm" if valor >= 0.05 else f"{texto_fecha}: sin lluvia"
+                if medias[i] is not None:
+                    texto += f" · en esas fechas llueve (≥ 1 mm) el {100 * probabilidades[i]:.0f} % de los días"
+                    total += valor
+                    total_normal += medias[i]
+                    dias_lluvia += valor >= 1
+                    dias_lluvia_normal += probabilidades[i]
+            else:
+                comparacion = climatologia.comparar_dia(clima, var, fecha, valor)
+                texto = f"{texto_fecha}: {abreviatura} {_es(valor)} °C"
+                if comparacion is None:
+                    clases.append("sin-normal")
+                else:
+                    p = comparacion["percentil"]
+                    clase = _clase(p, CLASES_PERCENTIL)
+                    clases.append(f"t{clase}")
+                    diferencia = valor - comparacion["normal"]
+                    texto += (f" · normal {_es(comparacion['normal'])} °C ({'+' if diferencia >= 0 else ''}{_es(diferencia)})"
+                              f" · percentil {p:.0f}: {CLASES_PERCENTIL[clase][1]}")
+                    if valor > comparacion["maximo"] or valor < comparacion["minimo"]:
+                        clases.append("fuera")
+                        texto += " · fuera de todo lo registrado en esas fechas en 1991–2020"
+                    con_dato += 1
+                    calidos += p >= 85
+                    frios += p < 15
+                    anomalias.append(diferencia)
+            if fila.provisional is True:
+                clases.append("prov")
+                texto += " · provisional (AEMET aún no lo ha validado)"
+            texto = html.escape(texto)
+            celdas.append(f'<span class="{" ".join(clases)}" style="grid-area:{fila_grid}/{columna}" title="{texto}" '
+                          f'data-info="{texto}"></span>')
+
+        dias_semana = "".join(f'<span class="cal-semana" style="grid-row:{f}">{t}</span>' for f, t in ((2, "L"), (4, "X"), (6, "V")))
+        if var == "prec":
+            leyenda_clases = [(f"q{i}", etiqueta) for i, (_, etiqueta) in enumerate(CLASES_LLUVIA_DIA)]
+            resumen = ""
+            if total_normal:
+                resumen = (f"<strong>{_es(total, 0)} mm</strong> frente a {_es(total_normal, 0)} mm normales "
+                           f"({100 * total / total_normal:.0f} %) · {dias_lluvia:.0f} días de lluvia (≥ 1 mm), "
+                           f"lo normal son {dias_lluvia_normal:.0f}")
+        else:
+            leyenda_clases = [(f"t{i}", etiqueta) for i, (_, etiqueta) in enumerate(CLASES_PERCENTIL)]
+            resumen = ""
+            if con_dato:
+                media = sum(anomalias) / len(anomalias)
+                esperados = round(0.15 * con_dato)
+                resumen = (f"<strong>{'+' if media >= 0 else ''}{_es(media)} °C</strong> de media sobre lo normal · "
+                           f"{calidos} días cálidos o muy cálidos y {frios} fríos o muy fríos "
+                           f"(lo esperable, unos {esperados} de cada)")
+        leyenda = "".join(f'<span class="cal-leyenda-item"><span class="cal-dia {c}"></span>{e}</span>' for c, e in leyenda_clases)
+        if var != "prec":
+            leyenda += '<span class="cal-leyenda-item"><span class="cal-dia t6 fuera"></span>fuera de lo registrado</span>'
+        leyenda += '<span class="cal-leyenda-item"><span class="cal-dia t3 prov"></span>provisional</span>'
+        activa = n == 0
+        botones.append(f'<button type="button" class="cal-boton{" activo" if activa else ""}" data-vista="{var}" '
+                       f'aria-pressed="{"true" if activa else "false"}">{nombre}</button>')
+        vistas.append(
+            f'<div class="cal-vista" data-vista="{var}"{"" if activa else " hidden"}>'
+            + (f'<p class="cal-resumen">Últimos 12 meses: {resumen}.</p>' if resumen else "")
+            + f'<div class="cal-scroll"><div class="cal-rejilla" style="--semanas:{SEMANAS_CALENDARIO}">{dias_semana}{"".join(celdas)}</div></div>'
+            f'<div class="cal-leyenda">{leyenda}</div></div>'
+        )
+    explicacion = (
+        '<p class="aviso">Cada casilla es un día. En máxima y mínima, el color dice dónde queda ese día entre los '
+        f'de su época (±{climatologia.VENTANA_DIAS} días) en 1991–2020 en esta estación: «normal» es el '
+        '30 % central; «muy cálido» o «muy frío», el 5 % más extremo. En lluvia, la cantidad del día. Pasa el ratón o '
+        'toca un día para ver el detalle.</p>'
+    )
+    return (
+        f'<div class="calendario"><div class="cal-botones" role="group" aria-label="Variable">{"".join(botones)}</div>'
+        f'{"".join(vistas)}<p class="cal-detalle" aria-live="polite">&nbsp;</p>{explicacion}</div>'
+    )
+
+
 #: Clases de velocidad de la racha (km/h). Se colorean con una rampa
 #: secuencial de un solo tono (índigo): en modo claro de claro (flojo) a
 #: oscuro (fuerte), y en modo oscuro al revés, para que el tramo más fuerte
@@ -2452,8 +2606,8 @@ COLUMNAS_CSV = [
 
 
 def escribir_csv(df_hist, df_provisional, ruta):
-    """CSV con los datos diarios de la estación (desde el inicio del año
-    hidrológico), más los días provisionales marcados como tales. Con punto
+    """CSV con los datos diarios de la estación (el último año y, si es más
+    atrás, desde el inicio del año hidrológico), más los días provisionales marcados como tales. Con punto
     y coma y coma decimal, para que Excel en español lo abra directamente."""
     columnas = [c for c, _ in COLUMNAS_CSV if c in df_hist.columns]
     tabla = df_hist[columnas].copy()
@@ -2550,9 +2704,11 @@ def main():
                 idema, nombre_real = resolver_idema(estacion["busqueda_nombre"])
                 nombre = estacion.get("nombre") or nombre_real
             print(f"Procesando histórico de {nombre} (idema={idema})...")
-            historico = obtener_historico(
-                idema, DIAS_HISTORICO, desde=inicio_anio_hidrologico(fecha_fin_historico())
-            )
+            # Desde el inicio del año hidrológico o, si es más atrás, las
+            # SEMANAS_CALENDARIO semanas del calendario frente a lo normal.
+            desde = min(inicio_anio_hidrologico(fecha_fin_historico()),
+                        fecha_fin_historico() - timedelta(weeks=SEMANAS_CALENDARIO))
+            historico = obtener_historico(idema, DIAS_HISTORICO, desde=desde)
             df_hist_completo = historico_a_dataframe(historico)
             if not df_hist_completo.empty:
                 inicio_ventana = pd.Timestamp(fecha_fin_historico() - timedelta(days=DIAS_HISTORICO))
@@ -2726,6 +2882,15 @@ def main():
         seccion.append(f'<section class="seccion seccion-historico" data-seccion="historico" id="{slug}-historico">')
         seccion.append(cabecera_seccion("Histórico y clima", fuente_historico,
                                         resumen_historico(df_hist_completo, mes_completo, normales)))
+        df_provisional = pd.DataFrame()
+        if not df_hist_completo.empty:
+            df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
+        clima = climatologia.climatologia_diaria(climatologia.leer_serie(idema)) if idema else {}
+        calendario = construir_calendario(datos_calendario(df_hist_completo, df_provisional), clima)
+        if calendario:
+            seccion.append('<details class="bloque-plegable" open><summary class="subtitulo">Cada día frente a lo normal (último año)</summary>')
+            seccion.append(calendario)
+            seccion.append('</details>')
         comparacion = [
             construir_tarjetas_anomalia(mes_completo, normales, periodo),
             construir_dias_senalados(mes_completo, normales),
@@ -2746,9 +2911,6 @@ def main():
         seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Últimos {DIAS_HISTORICO} días</summary>')
         seccion.append(construir_recuadro_extremos(df_hist, VARIABLES_EXTREMOS_HISTORICO))
         seccion.append('<div class="graficos-apilados">')
-        df_provisional = pd.DataFrame()
-        if not df_hist_completo.empty:
-            df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
         seccion.extend(construir_graficos_historico(df_hist, normales, df_provisional))
         seccion.append(construir_rosa_vientos(df_hist))
         seccion.append('</div></details>')
@@ -2756,7 +2918,7 @@ def main():
             escribir_csv(df_hist_completo, df_provisional, os.path.join("docs", "datos", f"{_slug(nombre)}.csv"))
             seccion.append(
                 f'<p class="descarga"><a href="datos/{_slug(nombre)}.csv" download>⬇ Descargar los datos diarios (CSV)</a> '
-                f'<span class="aviso">desde el 1 de octubre, separados por punto y coma</span></p>'
+                f'<span class="aviso">del último año y desde el 1 de octubre, separados por punto y coma</span></p>'
             )
         seccion.append(CIERRE_SECCION)
 

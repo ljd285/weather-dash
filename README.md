@@ -17,6 +17,7 @@ Cada sección dice de dónde salen sus datos y resume lo esencial en una línea 
 - **Comparación con lo normal**: el último mes completo frente a los valores normales de la estación (el periodo de referencia se lee de los metadatos de AEMET), clasificado como hace AEMET (frío/normal/cálido, seco/normal/húmedo…).
 - **Días señalados** del último mes completo (días de calor, noches tropicales y tórridas, días de lluvia, rachas fuertes…) junto a lo normal.
 - **Viento**: dirección y racha en la observación actual, y rosa de los vientos con la dirección de la racha máxima de cada día.
+- **Cada día frente a lo normal**: calendario estilo GitHub del último año (una columna por semana) con cada día coloreado según su máxima, su mínima o su lluvia. En temperatura, el color dice dónde queda el día entre los de su época (±7 días) en 1991–2020 en la estación: azul si fue frío para la fecha, rojo si fue cálido, y un punto si superó todo lo registrado. Necesita la **climatología diaria**, que se descarga una sola vez: pestaña **Actions** → "Descargar climatología diaria" → **Run workflow** (unas 60 peticiones a AEMET por estación; si se corta, al relanzarlo sigue por donde iba). Se guarda en `data/serie_1991_2020_<idema>.csv`.
 - **Año hidrológico**: lluvia acumulada desde el 1 de octubre frente a la acumulada normal a la misma fecha.
 - **Lluvia intensa**: intensidad máxima diaria (mm/h) con los umbrales de AEMET de lluvia fuerte, muy fuerte y torrencial.
 - **Presión y horas de sol**: evolución diaria frente a sus valores normales.

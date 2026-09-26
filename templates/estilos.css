@@ -20,6 +20,9 @@
     --fondo-ahora: #DDF8E5;
     --fondo-pronostico: #E3F2FD;
     --fondo-historico: #EFEBE9;
+    /* Calendario: divergente azul-rojo (ColorBrewer RdBu, apto para daltónicos) y azules para la lluvia. */
+    --t0: #2166AC; --t1: #67A9CF; --t2: #D1E5F0; --t3: #F2F2F2; --t4: #FDDBC7; --t5: #EF8A62; --t6: #B2182B;
+    --q0: #EBEDF0; --q1: #DEEBF7; --q2: #9ECAE1; --q3: #4292C6; --q4: #2171B5; --q5: #08306B;
 }
 :root[data-theme="dark"] {
     --fondo: #121212;
@@ -35,6 +38,8 @@
     --fondo-ahora: #0E2C1A;
     --fondo-pronostico: #15263A;
     --fondo-historico: #29231F;
+    --t0: #74ADD1; --t1: #3F7FB0; --t2: #2A4A66; --t3: #363636; --t4: #6B3A30; --t5: #C0563E; --t6: #F46D43;
+    --q0: #2D333B; --q1: #1E3A5A; --q2: #2F6699; --q3: #4A90D9; --q4: #7AB8F5; --q5: #BFE0FF;
 }
 body {
     font-family: "Roboto", -apple-system, Arial, sans-serif;
@@ -231,3 +236,36 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
 .descarga { margin: 0.5rem 0 1rem; font-size: 0.9rem; }
 .descarga a { color: var(--md-indigo); font-weight: 500; }
 :root[data-theme="dark"] .descarga a { color: #9FA8DA; }
+/* Calendario de cada día frente a lo normal (estilo GitHub): una columna
+   por semana y una fila por día. En pantallas estrechas se desplaza en
+   horizontal y empieza mostrando lo más reciente (direction: rtl). */
+.calendario { margin: 0.25rem 0 1rem; }
+.cal-botones { display: flex; gap: 0.4rem; margin-bottom: 0.5rem; }
+.cal-boton {
+    font: inherit; font-size: 0.9rem; font-weight: 500; padding: 0.35rem 0.9rem; border-radius: 999px; cursor: pointer;
+    border: 2px solid var(--color-historico); background: var(--superficie); color: var(--texto);
+}
+.cal-boton.activo { background: var(--color-historico); color: var(--superficie); }
+.cal-resumen { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.cal-scroll { overflow-x: auto; direction: rtl; background: var(--superficie); border-radius: 8px; padding: 0.6rem; box-shadow: 0 1px 3px var(--sombra); }
+.cal-rejilla {
+    direction: ltr; display: grid; gap: 3px; min-width: calc(1.4rem + var(--semanas) * 14px);
+    grid-template-columns: 1.4rem repeat(var(--semanas), minmax(11px, 1fr));
+    grid-template-rows: auto repeat(7, auto);
+}
+.cal-mes { grid-row: 1; font-size: 0.72rem; color: var(--texto-secundario); white-space: nowrap; }
+.cal-semana { grid-column: 1; font-size: 0.68rem; color: var(--texto-secundario); align-self: center; }
+.cal-dia { display: block; aspect-ratio: 1; border-radius: 2px; background: var(--q0); position: relative; cursor: pointer; }
+.cal-dia.t0 { background: var(--t0); } .cal-dia.t1 { background: var(--t1); } .cal-dia.t2 { background: var(--t2); }
+.cal-dia.t3 { background: var(--t3); } .cal-dia.t4 { background: var(--t4); } .cal-dia.t5 { background: var(--t5); }
+.cal-dia.t6 { background: var(--t6); }
+.cal-dia.q0 { background: var(--q0); } .cal-dia.q1 { background: var(--q1); } .cal-dia.q2 { background: var(--q2); }
+.cal-dia.q3 { background: var(--q3); } .cal-dia.q4 { background: var(--q4); } .cal-dia.q5 { background: var(--q5); }
+.cal-dia.sin-dato, .cal-dia.sin-normal { background: transparent; box-shadow: inset 0 0 0 1px var(--borde); }
+.cal-dia.fuera::after { content: ""; position: absolute; inset: 32%; border-radius: 50%; background: #FFFFFF; }
+.cal-dia.prov { outline: 1.5px dashed var(--texto-secundario); outline-offset: -1.5px; }
+.cal-dia:hover, .cal-dia.elegido { outline: 2px solid var(--texto); outline-offset: 0; }
+.cal-leyenda { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--texto-secundario); }
+.cal-leyenda-item { display: inline-flex; align-items: center; gap: 0.3rem; }
+.cal-leyenda .cal-dia { width: 0.85rem; cursor: default; }
+.cal-detalle { min-height: 1.3em; margin: 0.5rem 0 0.25rem; font-size: 0.9rem; font-weight: 500; }
