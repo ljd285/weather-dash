@@ -20,9 +20,12 @@
     --fondo-ahora: #DDF8E5;
     --fondo-pronostico: #E3F2FD;
     --fondo-historico: #EFEBE9;
-    /* Calendario: divergente azul-rojo (ColorBrewer RdBu, apto para daltónicos) y azules para la lluvia. */
-    --t0: #2166AC; --t1: #67A9CF; --t2: #D1E5F0; --t3: #F2F2F2; --t4: #FDDBC7; --t5: #EF8A62; --t6: #B2182B;
-    --q0: #EBEDF0; --q1: #DEEBF7; --q2: #9ECAE1; --q3: #4292C6; --q4: #2171B5; --q5: #08306B;
+    /* Calendario: divergente al estilo de los mapas de anomalías (violeta en lo
+       muy frío, granate en lo muy cálido, gris en lo normal) y lluvia tipo radar
+       (azules que pasan a violeta en lo intenso). Pasos comprobados para que
+       cada clase se distinga de la vecina. */
+    --t0: #4A2A8F; --t1: #4F7FC6; --t2: #A7C4EA; --t3: #DDDDDD; --t4: #F7B79A; --t5: #E0512B; --t6: #8A0F3A;
+    --q0: #EBEDF0; --q1: #BDD7EE; --q2: #6BAED6; --q3: #3182BD; --q4: #54278F; --q5: #2D004B;
 }
 :root[data-theme="dark"] {
     --fondo: #121212;
@@ -38,8 +41,9 @@
     --fondo-ahora: #0E2C1A;
     --fondo-pronostico: #15263A;
     --fondo-historico: #29231F;
-    --t0: #74ADD1; --t1: #3F7FB0; --t2: #2A4A66; --t3: #363636; --t4: #6B3A30; --t5: #C0563E; --t6: #F46D43;
-    --q0: #2D333B; --q1: #1E3A5A; --q2: #2F6699; --q3: #4A90D9; --q4: #7AB8F5; --q5: #BFE0FF;
+    /* En oscuro, lo más extremo es lo más luminoso. */
+    --t0: #9575CD; --t1: #3F72B8; --t2: #3A5577; --t3: #3A3A3A; --t4: #7A4536; --t5: #C24A2A; --t6: #EC407A;
+    --q0: #2D333B; --q1: #23507A; --q2: #2F6FAE; --q3: #4A90D9; --q4: #B39BF0; --q5: #E6D8FF;
 }
 body {
     font-family: "Roboto", -apple-system, Arial, sans-serif;
