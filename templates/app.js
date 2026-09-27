@@ -274,6 +274,21 @@ document.querySelectorAll('.calendario').forEach(function(cal) {
             if (detalle) detalle.innerHTML = '&nbsp;';
         });
     });
+    // Botones de umbral (noches tropicales, días de 35 °C...): resaltan los
+    // días que lo cumplen y atenúan el resto; pulsado otra vez, se quita.
+    cal.querySelectorAll('.cal-filtro').forEach(function(filtro) {
+        filtro.addEventListener('click', function() {
+            var vista = filtro.closest('.cal-vista');
+            var activar = filtro.getAttribute('aria-pressed') !== 'true';
+            vista.querySelectorAll('.cal-filtro').forEach(function(f) { f.setAttribute('aria-pressed', 'false'); });
+            vista.querySelectorAll('.cal-dia.resaltado').forEach(function(d) { d.classList.remove('resaltado'); });
+            vista.classList.toggle('filtrando', activar);
+            if (activar) {
+                filtro.setAttribute('aria-pressed', 'true');
+                vista.querySelectorAll('.cal-rejilla .' + filtro.getAttribute('data-filtro')).forEach(function(d) { d.classList.add('resaltado'); });
+            }
+        });
+    });
     function mostrar(ev) {
         var dia = ev.target.closest && ev.target.closest('.cal-rejilla .cal-dia[data-info]');
         if (!dia || !detalle) return;
