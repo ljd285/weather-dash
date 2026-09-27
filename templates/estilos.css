@@ -263,6 +263,19 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
 .cal-dia.q3 { background: var(--q3); } .cal-dia.q4 { background: var(--q4); } .cal-dia.q5 { background: var(--q5); }
 .cal-dia.sin-dato, .cal-dia.sin-normal { background: transparent; box-shadow: inset 0 0 0 1px var(--borde); }
 .cal-dia.fuera::after { content: ""; position: absolute; inset: 32%; border-radius: 50%; background: #FFFFFF; }
+/* Récord del mes en la estación: estrella (sustituye al punto de "fuera"). */
+.cal-dia.record::after {
+    content: "★"; position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 0.66rem; line-height: 1; color: #FFD600; text-shadow: 0 0 2px #000, 0 0 1px #000;
+}
+.cal-filtros { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0 0; }
+.cal-filtro {
+    font: inherit; font-size: 0.82rem; padding: 0.3rem 0.75rem; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--borde); background: var(--superficie); color: var(--texto); box-shadow: 0 1px 2px var(--sombra);
+}
+.cal-filtro[aria-pressed="true"] { border-color: var(--texto); box-shadow: inset 0 0 0 1px var(--texto); }
+/* Con un umbral resaltado, el resto de días se atenúa. */
+.cal-vista.filtrando .cal-rejilla .cal-dia:not(.resaltado) { opacity: 0.15; }
 .cal-dia.prov { outline: 1.5px dashed var(--texto-secundario); outline-offset: -1.5px; }
 .cal-dia:hover, .cal-dia.elegido { outline: 2px solid var(--texto); outline-offset: 0; }
 .cal-leyenda { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--texto-secundario); }

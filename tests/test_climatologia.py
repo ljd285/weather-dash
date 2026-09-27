@@ -71,8 +71,21 @@ def test_calendario(clima):
     datos = f.datos_calendario(historico, provisional, fin=fin)
     assert len(datos) == 7 * f.SEMANAS_CALENDARIO and datos["fecha"].iloc[0].weekday() == 0
     assert datos.set_index("fecha").loc["2026-07-18", "provisional"]
-    html = f.construir_calendario(datos, clima)
+    extremos = {"tmax": [{"valor": 44.0, "dia": 10.0, "anio": 2023.0, "unidad": "°C"}] * 12}
+    normales = {("tmax", 35): 4.23, ("tmin", 20): 63.0}
+    html = f.construir_calendario(datos, clima, extremos, normales)
     assert html.count('class="cal-vista"') == 3 and "hidden" in html
     assert "fuera de todo lo registrado" in html  # los 45 °C de julio
-    assert "t6 fuera" in html and "prov" in html and "q3" in html  # 12 mm = clase 5-15
+    assert "bate el récord de máxima de julio en la estación (44,0 °C, 10/07/2023)" in html
+    assert "t6 u35 u40 record" in html  # la ★ sustituye al punto de «fuera»
+    assert "prov" in html and "q3" in html  # 12 mm = clase 5-15
+    assert "Días ≥ 35 °C: <strong>1</strong> · normal 4,2" in html  # solo los 45 °C pasan de 35
+    assert "Noches tropicales (≥ 20 °C): <strong>" in html and "· normal 63" in html
+    assert "Días ≥ 40 °C: <strong>1</strong></button>" in html  # sin normal: no se muestra
     assert "aún no se ha descargado" in f.construir_calendario(datos, {})
+
+
+def test_dias_por_anio():
+    serie = serie_sintetica()
+    assert c.dias_por_anio(serie, "prec", 1) == pytest.approx(365.25 / 5, rel=0.01)
+    assert c.dias_por_anio(pd.DataFrame(), "tmax", 35) is None

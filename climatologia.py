@@ -217,6 +217,18 @@ def lluvia_normal(clima, fechas):
     return medias, probabilidades
 
 
+def dias_por_anio(serie, var, umbral):
+    """Media anual de días con `var` ≥ `umbral` en la serie (p. ej. noches
+    tropicales: tmin ≥ 20), o None sin datos suficientes. Se divide por los
+    años equivalentes con dato, por si faltan días."""
+    if serie.empty or var not in serie.columns:
+        return None
+    validos = serie[var].dropna()
+    if len(validos) < 365 * 10:
+        return None
+    return float((validos >= umbral).sum() / (len(validos) / 365.25))
+
+
 def main():
     """Descarga (o completa) la serie 1991-2020 de todas las estaciones."""
     import fetch_weather_dash as f
