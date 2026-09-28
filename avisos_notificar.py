@@ -298,6 +298,15 @@ def aplicar(acciones, github, ahora):
             print(f"Aviso #{accion[1]} terminado: cerrado.")
 
 
+#: Acciones que cambian los avisos que muestra el dashboard: tras ellas se
+#: pide una actualización del dashboard sin esperar a la hora siguiente.
+ACCIONES_QUE_CAMBIAN_EL_DASHBOARD = {"crear", "actualizar", "retirar", "cerrar_terminado"}
+
+
+def hay_que_actualizar_dashboard(acciones):
+    return any(accion[0] in ACCIONES_QUE_CAMBIAN_EL_DASHBOARD for accion in acciones)
+
+
 def main():
     token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY")
     simulacro = os.environ.get("AVISOS_SIMULACRO") == "1"
@@ -321,6 +330,11 @@ def main():
     acciones = decidir(actuales, github.abiertos(), ahora, consulta_ok)
     print(f"{len(actuales)} episodio(s) de aviso vigentes; {len(acciones)} acción(es).")
     aplicar(acciones, github, ahora)
+    # El workflow lee esta salida y, si hay cambios, lanza la actualización del dashboard.
+    salida = os.environ.get("GITHUB_OUTPUT")
+    if salida:
+        with open(salida, "a", encoding="utf-8") as fichero:
+            fichero.write(f"actualizar_dashboard={'true' if hay_que_actualizar_dashboard(acciones) else 'false'}\n")
 
 
 if __name__ == "__main__":

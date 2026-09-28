@@ -122,3 +122,11 @@ def test_aplicar_marcar_ausente_y_reaparecer_conservan_el_estado():
     assert marcado["ausente_desde"] == AHORA and marcado["nivel"] == "naranja"
     assert n.leer_estado(github.llamadas[1][2]["body"])["ausente_desde"] is None
     assert not any(ll[0] == "comentar" for ll in github.llamadas)  # sin correos por esto
+
+
+def test_cambios_en_los_avisos_actualizan_el_dashboard():
+    ep = n.episodios([tramo("naranja", 2, 8)], ZONA)[0]
+    assert n.hay_que_actualizar_dashboard([("crear", ep)])
+    assert n.hay_que_actualizar_dashboard([("cerrar_terminado", 2)])
+    assert not n.hay_que_actualizar_dashboard([("sin_cambios", 4, ep), ("marcar_ausente", 4, {})])
+    assert not n.hay_que_actualizar_dashboard([])
