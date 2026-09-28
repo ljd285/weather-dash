@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: write   # para lanzar la actualización del dashboard si cambian los avisos
 
 concurrency:
   group: notificar-avisos
@@ -32,7 +33,16 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Revisar avisos y notificar
+        id: notificar
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python avisos_notificar.py
+
+      # Si ha aparecido, cambiado o terminado algún aviso, el dashboard se
+      # actualiza ya en vez de esperar a su ejecución de cada hora.
+      - name: Actualizar el dashboard si cambian los avisos
+        if: steps.notificar.outputs.actualizar_dashboard == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run update_dashboard.yml --ref "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}"
