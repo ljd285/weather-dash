@@ -242,11 +242,6 @@ def leer_estado(texto):
 # --- Texto de los mensajes de Telegram --------------------------------------
 
 #: Encabezado del mensaje original cuando el aviso ya no está en vigor.
-#: Barra de color de la primera línea (Telegram no permite colorear texto);
-#: gris cuando el aviso ya no está en vigor.
-BARRAS_TELEGRAM = {"amarillo": "🟨", "naranja": "🟧", "rojo": "🟥"}
-BARRA_CERRADO_TELEGRAM = "⬜"
-LARGO_BARRA_TELEGRAM = 10
 CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>", "terminado": "⌛ <b>Aviso finalizado</b>"}
 MAX_DESCRIPCION_TELEGRAM = 400
 
@@ -259,9 +254,7 @@ def texto_telegram(episodio, cierre=None):
     """Mensaje HTML del aviso para el canal. `cierre`: "retirado" o
     "terminado" para marcar el mensaje original cuando el aviso acaba."""
     nivel = episodio["nivel"]
-    barra = (BARRA_CERRADO_TELEGRAM if cierre else BARRAS_TELEGRAM[nivel]) * LARGO_BARRA_TELEGRAM
     lineas = [
-        barra,
         f"{COLORES[nivel]} Aviso <b>{nivel}</b> por {_html(episodio['fenomeno'])}",
         f"📍 {_html(episodio['zona'])}",
         f"🕑 {f._momento_aviso(episodio['inicio'])} → {f._momento_aviso(episodio['fin'])}",
@@ -276,7 +269,7 @@ def texto_telegram(episodio, cierre=None):
             lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel']}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
                           + (f": {descripcion}" if descripcion else ""))
     lineas += ["", '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">Avisos en AEMET</a>', "Fuente: AEMET"]
-    return "\n".join(lineas[:1] + ([CIERRES_TELEGRAM[cierre]] if cierre else []) + lineas[1:])
+    return "\n".join(([CIERRES_TELEGRAM[cierre]] if cierre else []) + lineas)
 
 
 def texto_respuesta_telegram(cambios=None, retirado=False):
