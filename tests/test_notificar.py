@@ -130,3 +130,85 @@ def test_cambios_en_los_avisos_actualizan_el_dashboard():
     assert n.hay_que_actualizar_dashboard([("cerrar_terminado", 2)])
     assert not n.hay_que_actualizar_dashboard([("sin_cambios", 4, ep), ("marcar_ausente", 4, {})])
     assert not n.hay_que_actualizar_dashboard([])
+
+
+# --- Telegram ---------------------------------------------------------------
+
+class TelegramFalso:
+    def __init__(self, falla=False):
+        self.llamadas, self.falla, self.siguiente = [], falla, 100
+
+    def enviar(self, texto, responder_a=None):
+        if self.falla:
+            raise RuntimeError("caído")
+        self.llamadas.append(("enviar", texto, responder_a))
+        self.siguiente += 1
+        return self.siguiente
+
+    def editar(self, message_id, texto):
+        if self.falla:
+            raise RuntimeError("caído")
+        self.llamadas.append(("editar", message_id, texto))
+
+
+class GitHubConNumero(GitHubFalso):
+    def crear(self, titulo, cuerpo):
+        super().crear(titulo, cuerpo)
+        return {"number": 42}
+
+
+def test_texto_telegram_escapa_html_y_marca_el_cierre():
+    ep = n.episodios([tramo("naranja", 2, 8, descripcion="Racha <90 km/h> & lluvia")], ZONA)[0]
+    texto = n.texto_telegram(ep)
+    assert texto.startswith("🟠 <b>Aviso naranja por lluvias</b>") and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
+    assert "Fuente: AEMET" in texto and len(texto) < 4096
+    assert n.texto_telegram(ep, cierre="retirado").startswith("🚫")
+    assert "<b>naranja</b>" in n.texto_respuesta_telegram(["⬆️ Sube a nivel **naranja** 🟠"])
+
+
+def test_aviso_nuevo_se_publica_y_guarda_el_id_en_el_issue():
+    ep = n.episodios([tramo("naranja", 2, 8)], ZONA)[0]
+    github, telegram = GitHubConNumero(), TelegramFalso()
+    n.aplicar([("crear", ep)], github, AHORA, telegram)
+    assert telegram.llamadas[0][0] == "enviar"
+    assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 101
+
+
+def test_actualizacion_edita_el_original_y_responde_conservando_el_id():
+    antes = n.episodios([tramo("amarillo", 2, 6)], ZONA)[0]
+    antes["telegram_id"] = 55
+    despues = n.episodios([tramo("naranja", 2, 6)], ZONA)
+    (accion,) = n.decidir(despues, [abierto(7, antes)], AHORA)
+    github, telegram = GitHubFalso(), TelegramFalso()
+    n.aplicar([accion], github, AHORA, telegram)
+    assert [ll[0] for ll in telegram.llamadas] == ["editar", "enviar"]
+    assert telegram.llamadas[0][1] == 55 and telegram.llamadas[1][2] == 55
+    assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 55
+
+
+def test_retirada_y_fin_marcan_el_mensaje_original():
+    ep = n.episodios([tramo("naranja", 2, 8)], ZONA)[0]
+    ep["telegram_id"] = 9
+    numero, estado = abierto(4, ep)
+    telegram = TelegramFalso()
+    n.aplicar([("retirar", numero, estado), ("cerrar_terminado", numero)], GitHubFalso(), AHORA, telegram, {numero: estado})
+    assert [ll[0] for ll in telegram.llamadas] == ["editar", "enviar", "editar"]
+    assert telegram.llamadas[0][2].startswith("🚫") and telegram.llamadas[2][2].startswith("⌛")
+
+
+def test_si_telegram_falla_los_issues_siguen_y_se_reintenta_despues():
+    ep = n.episodios([tramo("naranja", 2, 8)], ZONA)[0]
+    github = GitHubConNumero()
+    n.aplicar([("crear", ep)], github, AHORA, TelegramFalso(falla=True))
+    assert github.llamadas == [("crear", n.titulo(ep))]  # el issue se creó y no hubo más ediciones
+    sin_publicar = abierto(42, ep)
+    telegram, github = TelegramFalso(), GitHubFalso()
+    n.reintentar_telegram([sin_publicar], [], github, telegram, AHORA)
+    assert telegram.llamadas[0][0] == "enviar"
+    assert n.leer_estado(github.llamadas[0][2]["body"])["telegram_id"] == 101
+    # con id, ausente o terminado, no se vuelve a publicar
+    ya = dict(ep, telegram_id=1)
+    telegram = TelegramFalso()
+    n.reintentar_telegram([abierto(1, ya), abierto(2, ep, ausente_desde=AHORA)], [], github, telegram, AHORA)
+    n.reintentar_telegram([sin_publicar], [], github, telegram, AHORA + timedelta(days=2))
+    assert telegram.llamadas == []

@@ -3,6 +3,7 @@ name: Notificar avisos AEMET
 # Cada 15 minutos consulta los avisos de AEMET de las zonas de config.py y
 # abre, comenta o cierra issues con la etiqueta "aviso-aemet". Cada issue
 # menciona a AVISOS_NOTIFICAR_A (config.py), y GitHub le envía un correo.
+# Si hay secretos de Telegram, también los publica en un canal.
 on:
   schedule:
     - cron: "3,18,33,48 * * * *"
@@ -37,6 +38,8 @@ jobs:
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python avisos_notificar.py
 
       # Si ha aparecido, cambiado o terminado algún aviso, el dashboard se
