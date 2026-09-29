@@ -192,7 +192,7 @@ def cuerpo(episodio, mencion=True, ausente_desde=None):
     if mencion and AVISOS_NOTIFICAR_A:
         lineas.append(f"@{AVISOS_NOTIFICAR_A}\n")
     lineas.append(f"**Aviso {episodio['nivel']} por {episodio['fenomeno']}** en **{episodio['zona']}**, "
-                  f"del {f._momento_aviso(episodio['inicio'])} al {f._momento_aviso(episodio['fin'])} (hora peninsular).\n")
+                  f"del {f._momento_aviso(episodio['inicio'])} al {f._momento_aviso(episodio['fin'])}.\n")
     for tramo in episodio["tramos"]:
         lineas.append(f"- {COLORES[tramo['nivel']]} **{tramo['nivel']}**, del {f._momento_aviso(tramo['inicio'])} "
                       f"al {f._momento_aviso(tramo['fin'])}" + (f": {tramo['descripcion']}" if tramo["descripcion"] else ""))

@@ -82,6 +82,7 @@ def test_titulo_cuerpo_y_estado():
     ep = n.episodios([tramo("amarillo", 2, 6), tramo("naranja", 6, 10)], ZONA)[0]
     assert n.titulo(ep).startswith("🟠 Aviso naranja por lluvias – Litoral norte de Valencia (")
     texto = n.cuerpo(ep)
+    assert "hora peninsular" not in texto
     assert texto.startswith("@") and "🟡 **amarillo**" in texto and "🟠 **naranja**" in texto
     estado = n.leer_estado(texto)
     assert estado["nivel"] == "naranja" and estado["fin"] == ep["fin"] and estado["ausente_desde"] is None
