@@ -75,3 +75,13 @@ def test_lluvia_de_hoy_y_de_ayer():
     assert acumulados["hoy"] == (1.0, 1)  # 23 UTC del 28 = de 00 a 01 local del 29
     assert acumulados["ayer"] == (1.0, 24)  # 22 UTC del 28 = de 23 a 24 local del 28; la del 27 no cuenta
     assert f.lluvia_por_dia([]) == {}
+
+
+def test_tarjeta_de_lluvia_con_el_acumulado_de_hoy():
+    ahora = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    obs = [{"fint": (ahora - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%S+0000"), "ta": 20.0, "prec": 0.0}
+           for h in range(48, -1, -1)]
+    obs[-1]["prec"] = 2.4
+    html = f.construir_tarjetas_kpi(obs[-1], observaciones=obs)
+    assert "<h3>Lluvia hoy</h3>" in html and "última hora 2,4 mm" in html and "ayer 0,0 mm" in html
+    assert "<h3>Lluvia (última hora)</h3>" in f.construir_tarjetas_kpi({"prec": 0.0})  # sin lecturas horarias

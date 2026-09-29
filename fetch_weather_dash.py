@@ -1813,27 +1813,32 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nom
         rocio = punto_de_rocio(ta, hr)
     detalle_humedad = f"rocío {rocio:.0f} °C · {confort_rocio(rocio)}" if rocio is not None else ""
 
-    # Acumulado de hoy y de ayer, con las lecturas horarias. Si faltan horas,
-    # se avisa: el total podría ser mayor.
-    detalle_lluvia = ""
+    # Lluvia: el dato principal es el acumulado de hoy (desde las 00 h, hora
+    # local), con la última hora y el total de ayer debajo. Sale de las
+    # lecturas horarias; si faltan horas, un asterisco avisa de que el total
+    # podría ser mayor. Sin lecturas, se muestra solo la de la última hora.
+    def aviso_faltan(horas, esperadas):
+        if horas >= esperadas - 1:
+            return ""
+        return f' <span title="Faltan lecturas de {esperadas - horas} h: el total puede ser mayor">*</span>'
+
+    tarjeta_lluvia = ("Lluvia (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), "")
     acumulados = lluvia_por_dia(observaciones)
     if acumulados:
-        partes = []
-        horas_hoy = int((datetime.now(ZONA_HORARIA) - datetime.now(ZONA_HORARIA).replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() // 3600)
-        for clave, etiqueta, horas_esperadas in (("hoy", "Hoy", horas_hoy), ("ayer", "Ayer", 24)):
-            mm, horas = acumulados[clave]
-            if horas == 0:
-                continue
-            texto = f"{etiqueta}: <strong>{_es(mm)} mm</strong>"
-            if horas < horas_esperadas - 1:
-                texto += f' <span title="Faltan lecturas de {horas_esperadas - horas} h: el total puede ser mayor">*</span>'
-            partes.append(texto)
-        detalle_lluvia = " · ".join(partes)
+        local = datetime.now(ZONA_HORARIA)
+        horas_hoy = local.hour  # horas completas desde medianoche
+        mm_hoy, n_hoy = acumulados["hoy"]
+        mm_ayer, n_ayer = acumulados["ayer"]
+        detalles_lluvia = [f"última hora {fmt(lectura.get('prec'), 'mm')}"]
+        if n_ayer:
+            detalles_lluvia.append(f"ayer {_es(mm_ayer)} mm{aviso_faltan(n_ayer, 24)}")
+        tarjeta_lluvia = ("Lluvia hoy", MATERIAL["azul_claro"], f"{_es(mm_hoy)} mm{aviso_faltan(n_hoy, horas_hoy)}",
+                          " · ".join(detalles_lluvia))
     kpis_aire = [
         ("Temperatura", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), detalle_temperatura + minigrafico),
         ("Viento", MATERIAL["indigo"], fmt(viento_kmh, "km/h"), " · ".join(detalles_viento)),
         ("Humedad", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
-        ("Lluvia (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), detalle_lluvia),
+        tarjeta_lluvia,
     ]
     kpis = []  # las del mar
     fuente_mar = None
