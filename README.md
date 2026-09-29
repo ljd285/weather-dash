@@ -125,6 +125,28 @@ El workflow **Notificar avisos AEMET** (`.github/workflows/avisos.yml`) revisa c
 
 Es un complemento, no un sistema de emergencias: puede retrasarse o fallar (GitHub, AEMET, el correo). Ante avisos rojos, sigue los canales oficiales (AEMET, 112, ES-Alert).
 
+## 7b. Avisos en un canal público de Telegram
+
+Además del correo, el mismo workflow puede publicar los avisos en un **canal de Telegram** (gratis, con notificación push al móvil de quien se suscriba). Se publican todos los niveles que permita `AVISOS_NIVEL_MINIMO`. Si no configuras los secretos de abajo, no se publica nada y todo lo demás funciona igual.
+
+**Alta (una sola vez):**
+
+1. En Telegram, habla con **@BotFather**, envía `/newbot`, elige nombre y un usuario que acabe en `bot`. Te da un **token** (`123456:ABC…`): es un secreto, quien lo tenga puede publicar como tu bot.
+2. Crea un **canal público** (Nuevo canal → Público) con un enlace, p. ej. `t.me/AvisosMeteoVLC`. En *Administradores*, añade el bot con permiso para **publicar mensajes**.
+3. En el repositorio: *Settings → Secrets and variables → Actions → New repository secret*:
+   - `TELEGRAM_BOT_TOKEN`: el token de BotFather.
+   - `TELEGRAM_CHAT_ID`: el canal con arroba, p. ej. `@AvisosMeteoVLC`.
+4. En la descripción del canal conviene poner que es un complemento y no un sistema de emergencias (ver abajo).
+
+**Cómo se publica:**
+
+- Cada episodio de aviso es **un mensaje** con el nivel, el fenómeno, la zona, las horas, la descripción y enlaces a AEMET y al dashboard.
+- Si el aviso cambia, el mensaje original se **edita** (queda siempre al día) y se publica una **respuesta** con lo que ha cambiado, que es la que hace sonar la notificación.
+- Si AEMET lo retira, el original se marca como retirado y se responde. Cuando termina a su hora, el original se marca como finalizado, sin notificar.
+- El id del mensaje se guarda en el estado oculto del issue, sin ficheros aparte. Si Telegram falla, los issues y el correo no se ven afectados y el aviso se publica en la siguiente ejecución.
+- Probar sin publicar: `AVISOS_SIMULACRO=1 python avisos_notificar.py` muestra lo que enviaría.
+- Los avisos en vigor cuando actives Telegram por primera vez se publican en la siguiente ejecución.
+
 ## 8. Actualizaciones puntuales con cron-job.org (recomendado)
 
 Las ejecuciones programadas de GitHub (`schedule`) son «lo mejor que se pueda»: con GitHub cargado se retrasan o se saltan, a veces durante horas. Para que el dashboard se actualice cada hora y los avisos se revisen cada 15 minutos de verdad, un servicio externo gratuito, [cron-job.org](https://cron-job.org), pide a GitHub que lance los workflows a su hora (evento `workflow_dispatch`, que no sufre esos retrasos). Las programaciones de GitHub se dejan como respaldo: si coinciden dos ejecuciones, la segunda espera a la primera (`concurrency`) y no se duplica nada.
