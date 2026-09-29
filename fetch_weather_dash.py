@@ -322,6 +322,26 @@ def _observaciones_a_dataframe(observaciones):
     return df.dropna(subset=["fint"]).sort_values("fint")
 
 
+def lluvia_por_dia(observaciones, ahora=None):
+    """Lluvia acumulada de hoy (desde las 00 h, hora local) y de ayer (día
+    natural completo) con las lecturas horarias de la estación. Cada lectura
+    trae la lluvia de la hora anterior, así que cuenta para el día en que
+    empezó esa hora. Devuelve {"hoy": (mm, horas), "ayer": (mm, horas)}, con
+    las horas que tienen dato, o {} si no hay lecturas."""
+    df = _observaciones_a_dataframe(observaciones)
+    if df.empty:
+        return {}
+    ahora = pd.Timestamp(ahora or datetime.now(timezone.utc))
+    ahora = ahora.tz_localize("UTC") if ahora.tzinfo is None else ahora
+    hoy = ahora.tz_convert(ZONA_HORARIA).normalize()
+    inicio_hora = (df["fint"] - pd.Timedelta(minutes=30)).dt.tz_localize("UTC").dt.tz_convert(ZONA_HORARIA)
+    resultado = {}
+    for clave, dia in (("hoy", hoy), ("ayer", hoy - pd.Timedelta(days=1))):
+        del_dia = df.loc[inicio_hora.dt.normalize() == dia, "prec"].dropna()
+        resultado[clave] = (float(del_dia.sum()), len(del_dia))
+    return resultado
+
+
 LECTURAS_MINIMAS_DIA = 20  # horas con dato necesarias para dar por bueno un día
 
 
@@ -1793,11 +1813,32 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nom
         rocio = punto_de_rocio(ta, hr)
     detalle_humedad = f"rocío {rocio:.0f} °C · {confort_rocio(rocio)}" if rocio is not None else ""
 
+    # Lluvia: el dato principal es el acumulado de hoy (desde las 00 h, hora
+    # local), con la última hora y el total de ayer debajo. Sale de las
+    # lecturas horarias; si faltan horas, un asterisco avisa de que el total
+    # podría ser mayor. Sin lecturas, se muestra solo la de la última hora.
+    def aviso_faltan(horas, esperadas):
+        if horas >= esperadas - 1:
+            return ""
+        return f' <span title="Faltan lecturas de {esperadas - horas} h: el total puede ser mayor">*</span>'
+
+    tarjeta_lluvia = ("Lluvia (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), "")
+    acumulados = lluvia_por_dia(observaciones)
+    if acumulados:
+        local = datetime.now(ZONA_HORARIA)
+        horas_hoy = local.hour  # horas completas desde medianoche
+        mm_hoy, n_hoy = acumulados["hoy"]
+        mm_ayer, n_ayer = acumulados["ayer"]
+        detalles_lluvia = [f"última hora {fmt(lectura.get('prec'), 'mm')}"]
+        if n_ayer:
+            detalles_lluvia.append(f"ayer {_es(mm_ayer)} mm{aviso_faltan(n_ayer, 24)}")
+        tarjeta_lluvia = ("Lluvia hoy", MATERIAL["azul_claro"], f"{_es(mm_hoy)} mm{aviso_faltan(n_hoy, horas_hoy)}",
+                          " · ".join(detalles_lluvia))
     kpis_aire = [
         ("Temperatura", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), detalle_temperatura + minigrafico),
         ("Viento", MATERIAL["indigo"], fmt(viento_kmh, "km/h"), " · ".join(detalles_viento)),
         ("Humedad", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
-        ("Lluvia (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
+        tarjeta_lluvia,
     ]
     kpis = []  # las del mar
     fuente_mar = None
