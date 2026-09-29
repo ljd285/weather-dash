@@ -165,9 +165,9 @@ class GitHubConNumero(GitHubFalso):
 def test_texto_telegram_escapa_html_y_marca_el_cierre():
     ep = n.episodios([tramo("naranja", 2, 8, descripcion="Racha <90 km/h> & lluvia")], ZONA)[0]
     texto = n.texto_telegram(ep)
-    assert texto.startswith("🟧" * 10 + "\n🟠 Aviso <b>naranja</b> por lluvias") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
+    assert texto.startswith("🟠 Aviso <b>naranja</b> por lluvias") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
     assert "Fuente: AEMET" in texto and len(texto) < 4096
-    assert n.texto_telegram(ep, cierre="retirado").startswith("⬜" * 10 + "\n🚫")
+    assert n.texto_telegram(ep, cierre="retirado").startswith("🚫") and "⬜" not in n.texto_telegram(ep)
     assert "<b>naranja</b>" in n.texto_respuesta_telegram(["⬆️ Sube a nivel **naranja** 🟠"])
 
 
@@ -198,7 +198,7 @@ def test_retirada_y_fin_marcan_el_mensaje_original():
     telegram = TelegramFalso()
     n.aplicar([("retirar", numero, estado), ("cerrar_terminado", numero)], GitHubFalso(), AHORA, telegram, {numero: estado})
     assert [ll[0] for ll in telegram.llamadas] == ["editar", "enviar", "editar"]
-    assert telegram.llamadas[0][2].splitlines()[1].startswith("🚫") and telegram.llamadas[2][2].splitlines()[1].startswith("⌛")
+    assert telegram.llamadas[0][2].startswith("🚫") and telegram.llamadas[2][2].startswith("⌛")
 
 
 def test_si_telegram_falla_los_issues_siguen_y_se_reintenta_despues():

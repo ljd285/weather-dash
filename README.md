@@ -140,7 +140,7 @@ Además del correo, el mismo workflow puede publicar los avisos en un **canal de
 
 **Cómo se publica:**
 
-- Cada episodio de aviso es **un mensaje** con una barra de color (🟨 amarillo, 🟧 naranja, 🟥 rojo; gris cuando ya no está en vigor), el nivel (en negrita), el fenómeno, la zona, las horas, la descripción y un enlace a los avisos de AEMET.
+- Cada episodio de aviso es **un mensaje** con el nivel (en negrita, con su círculo de color 🟡🟠🔴), el fenómeno, la zona, las horas, la descripción y un enlace a los avisos de AEMET.
 - Si el aviso cambia, el mensaje original se **edita** (queda siempre al día) y se publica una **respuesta** con lo que ha cambiado, que es la que hace sonar la notificación.
 - Si AEMET lo retira, el original se marca como retirado y se responde. Cuando termina a su hora, el original se marca como finalizado, sin notificar.
 - El id del mensaje se guarda en el estado oculto del issue, sin ficheros aparte. Si Telegram falla, los issues y el correo no se ven afectados y el aviso se publica en la siguiente ejecución.
