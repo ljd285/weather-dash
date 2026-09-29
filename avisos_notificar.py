@@ -242,7 +242,12 @@ def leer_estado(texto):
 # --- Texto de los mensajes de Telegram --------------------------------------
 
 #: Encabezado del mensaje original cuando el aviso ya no está en vigor.
-CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>\n", "terminado": "⌛ <b>Aviso finalizado</b>\n"}
+#: Barra de color de la primera línea (Telegram no permite colorear texto);
+#: gris cuando el aviso ya no está en vigor.
+BARRAS_TELEGRAM = {"amarillo": "🟨", "naranja": "🟧", "rojo": "🟥"}
+BARRA_CERRADO_TELEGRAM = "⬜"
+LARGO_BARRA_TELEGRAM = 10
+CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>", "terminado": "⌛ <b>Aviso finalizado</b>"}
 MAX_DESCRIPCION_TELEGRAM = 400
 
 
@@ -254,10 +259,12 @@ def texto_telegram(episodio, cierre=None):
     """Mensaje HTML del aviso para el canal. `cierre`: "retirado" o
     "terminado" para marcar el mensaje original cuando el aviso acaba."""
     nivel = episodio["nivel"]
+    barra = (BARRA_CERRADO_TELEGRAM if cierre else BARRAS_TELEGRAM[nivel]) * LARGO_BARRA_TELEGRAM
     lineas = [
-        f"{COLORES[nivel]} <b>Aviso {nivel} por {_html(episodio['fenomeno'])}</b>",
+        barra,
+        f"{COLORES[nivel]} Aviso <b>{nivel}</b> por {_html(episodio['fenomeno'])}",
         f"📍 {_html(episodio['zona'])}",
-        f"🕑 {f._momento_aviso(episodio['inicio'])} → {f._momento_aviso(episodio['fin'])} (hora peninsular)",
+        f"🕑 {f._momento_aviso(episodio['inicio'])} → {f._momento_aviso(episodio['fin'])}",
         "",
     ]
     tramos = episodio.get("tramos", [])
@@ -266,14 +273,10 @@ def texto_telegram(episodio, cierre=None):
         if len(tramos) == 1:  # el encabezado ya dice el nivel y las horas
             lineas.append(descripcion)
         else:
-            lineas.append(f"{COLORES[tramo['nivel']]} {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
+            lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel']}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
                           + (f": {descripcion}" if descripcion else ""))
-    enlaces = ['<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">Avisos en AEMET</a>']
-    usuario, _, nombre = os.environ.get("GITHUB_REPOSITORY", "").partition("/")
-    if nombre:
-        enlaces.append(f'<a href="https://{usuario}.github.io/{nombre}/">Dashboard</a>')
-    lineas += ["", " · ".join(enlaces), "Fuente: AEMET"]
-    return CIERRES_TELEGRAM.get(cierre, "") + "\n".join(lineas)
+    lineas += ["", '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">Avisos en AEMET</a>', "Fuente: AEMET"]
+    return "\n".join(lineas[:1] + ([CIERRES_TELEGRAM[cierre]] if cierre else []) + lineas[1:])
 
 
 def texto_respuesta_telegram(cambios=None, retirado=False):
@@ -341,6 +344,25 @@ def publicar_en_telegram(telegram, github, numero, episodio):
     if telegram_id and numero:
         github.editar(numero, body=cuerpo(dict(episodio, telegram_id=telegram_id)))
     return telegram_id
+
+
+def republicar_telegram(abiertos, acciones, github, telegram):
+    """Borra del canal el mensaje de cada aviso abierto y lo publica de nuevo
+    (AVISOS_REPUBLICAR_TELEGRAM=1): sirve para aplicar un formato nuevo a lo
+    ya publicado. Si no se puede borrar un mensaje, se deja como está."""
+    if telegram is None:
+        return
+    tratados = {a[1] for a in acciones if a[0] != "crear"}
+    for numero, estado in abiertos:
+        if numero in tratados or not estado.get("telegram_id") or estado.get("ausente_desde"):
+            continue
+        try:
+            telegram.borrar(estado["telegram_id"])
+        except Exception as exc:
+            print(f"Aviso: no se pudo borrar el mensaje del aviso #{numero}: {exc}")
+            continue
+        if publicar_en_telegram(telegram, github, numero, dict(estado, telegram_id=None)):
+            print(f"Aviso #{numero} republicado en Telegram.")
 
 
 def aplicar(acciones, github, ahora, telegram=None, estados=None):
@@ -438,6 +460,8 @@ def main():
     acciones = decidir(actuales, abiertos, ahora, consulta_ok)
     print(f"{len(actuales)} episodio(s) de aviso vigentes; {len(acciones)} acción(es).")
     aplicar(acciones, github, ahora, telegram, dict(abiertos))
+    if os.environ.get("AVISOS_REPUBLICAR_TELEGRAM") == "1":
+        republicar_telegram(abiertos, acciones, github, telegram)
     reintentar_telegram(abiertos, acciones, github, telegram, ahora)
     # El workflow lee esta salida y, si hay cambios, lanza la actualización del dashboard.
     salida = os.environ.get("GITHUB_OUTPUT")

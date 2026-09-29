@@ -68,3 +68,10 @@ class Telegram:
         except TelegramError as exc:
             if "not modified" not in str(exc):  # editar sin cambios no es un error
                 raise
+
+    def borrar(self, message_id):
+        try:
+            self._llamar("deleteMessage", chat_id=self.chat_id, message_id=message_id)
+        except TelegramError as exc:
+            if "not found" not in str(exc):  # ya borrado a mano: no es un error
+                raise

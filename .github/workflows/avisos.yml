@@ -7,7 +7,12 @@ name: Notificar avisos AEMET
 on:
   schedule:
     - cron: "3,18,33,48 * * * *"
-  workflow_dispatch: {}   # para lanzarlo a mano desde la pestaña Actions
+  workflow_dispatch:   # para lanzarlo a mano desde la pestaña Actions
+    inputs:
+      republicar_telegram:
+        description: "Borrar y volver a publicar en Telegram los avisos abiertos (para aplicar un formato nuevo)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -40,6 +45,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          AVISOS_REPUBLICAR_TELEGRAM: ${{ inputs.republicar_telegram && '1' || '' }}
         run: python avisos_notificar.py
 
       # Si ha aparecido, cambiado o terminado algún aviso, el dashboard se

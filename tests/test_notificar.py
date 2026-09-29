@@ -150,6 +150,11 @@ class TelegramFalso:
             raise RuntimeError("caído")
         self.llamadas.append(("editar", message_id, texto))
 
+    def borrar(self, message_id):
+        if self.falla:
+            raise RuntimeError("caído")
+        self.llamadas.append(("borrar", message_id))
+
 
 class GitHubConNumero(GitHubFalso):
     def crear(self, titulo, cuerpo):
@@ -160,9 +165,9 @@ class GitHubConNumero(GitHubFalso):
 def test_texto_telegram_escapa_html_y_marca_el_cierre():
     ep = n.episodios([tramo("naranja", 2, 8, descripcion="Racha <90 km/h> & lluvia")], ZONA)[0]
     texto = n.texto_telegram(ep)
-    assert texto.startswith("🟠 <b>Aviso naranja por lluvias</b>") and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
+    assert texto.startswith("🟧" * 10 + "\n🟠 Aviso <b>naranja</b> por lluvias") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
     assert "Fuente: AEMET" in texto and len(texto) < 4096
-    assert n.texto_telegram(ep, cierre="retirado").startswith("🚫")
+    assert n.texto_telegram(ep, cierre="retirado").startswith("⬜" * 10 + "\n🚫")
     assert "<b>naranja</b>" in n.texto_respuesta_telegram(["⬆️ Sube a nivel **naranja** 🟠"])
 
 
@@ -193,7 +198,7 @@ def test_retirada_y_fin_marcan_el_mensaje_original():
     telegram = TelegramFalso()
     n.aplicar([("retirar", numero, estado), ("cerrar_terminado", numero)], GitHubFalso(), AHORA, telegram, {numero: estado})
     assert [ll[0] for ll in telegram.llamadas] == ["editar", "enviar", "editar"]
-    assert telegram.llamadas[0][2].startswith("🚫") and telegram.llamadas[2][2].startswith("⌛")
+    assert telegram.llamadas[0][2].splitlines()[1].startswith("🚫") and telegram.llamadas[2][2].splitlines()[1].startswith("⌛")
 
 
 def test_si_telegram_falla_los_issues_siguen_y_se_reintenta_despues():
@@ -212,3 +217,20 @@ def test_si_telegram_falla_los_issues_siguen_y_se_reintenta_despues():
     n.reintentar_telegram([abierto(1, ya), abierto(2, ep, ausente_desde=AHORA)], [], github, telegram, AHORA)
     n.reintentar_telegram([sin_publicar], [], github, telegram, AHORA + timedelta(days=2))
     assert telegram.llamadas == []
+
+
+def test_republicar_borra_el_mensaje_y_guarda_el_id_nuevo():
+    ep = n.episodios([tramo("naranja", 2, 8)], ZONA)[0]
+    ep["telegram_id"] = 9
+    github, telegram = GitHubFalso(), TelegramFalso()
+    n.republicar_telegram([abierto(4, ep)], [], github, telegram)
+    assert [ll[0] for ll in telegram.llamadas] == ["borrar", "enviar"] and telegram.llamadas[0][1] == 9
+    assert n.leer_estado(github.llamadas[0][2]["body"])["telegram_id"] == 101
+
+
+def test_republicar_no_publica_si_no_puede_borrar():
+    ep = n.episodios([tramo("naranja", 2, 8)], ZONA)[0]
+    ep["telegram_id"] = 9
+    github, telegram = GitHubFalso(), TelegramFalso(falla=True)
+    n.republicar_telegram([abierto(4, ep)], [], github, telegram)
+    assert github.llamadas == [] and telegram.llamadas == []

@@ -60,3 +60,9 @@ def test_desde_entorno(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "abc")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "@canal")
     assert t.Telegram.desde_entorno().chat_id == "@canal"
+
+
+def test_borrar_ignora_un_mensaje_que_ya_no_existe(monkeypatch):
+    tg, llamadas = cliente_con(monkeypatch, Respuesta(400, {"ok": False, "description": "Bad Request: message to delete not found"}))
+    tg.borrar(5)
+    assert llamadas[0][0].endswith("/deleteMessage")
