@@ -322,6 +322,26 @@ def _observaciones_a_dataframe(observaciones):
     return df.dropna(subset=["fint"]).sort_values("fint")
 
 
+def lluvia_por_dia(observaciones, ahora=None):
+    """Lluvia acumulada de hoy (desde las 00 h, hora local) y de ayer (día
+    natural completo) con las lecturas horarias de la estación. Cada lectura
+    trae la lluvia de la hora anterior, así que cuenta para el día en que
+    empezó esa hora. Devuelve {"hoy": (mm, horas), "ayer": (mm, horas)}, con
+    las horas que tienen dato, o {} si no hay lecturas."""
+    df = _observaciones_a_dataframe(observaciones)
+    if df.empty:
+        return {}
+    ahora = pd.Timestamp(ahora or datetime.now(timezone.utc))
+    ahora = ahora.tz_localize("UTC") if ahora.tzinfo is None else ahora
+    hoy = ahora.tz_convert(ZONA_HORARIA).normalize()
+    inicio_hora = (df["fint"] - pd.Timedelta(minutes=30)).dt.tz_localize("UTC").dt.tz_convert(ZONA_HORARIA)
+    resultado = {}
+    for clave, dia in (("hoy", hoy), ("ayer", hoy - pd.Timedelta(days=1))):
+        del_dia = df.loc[inicio_hora.dt.normalize() == dia, "prec"].dropna()
+        resultado[clave] = (float(del_dia.sum()), len(del_dia))
+    return resultado
+
+
 LECTURAS_MINIMAS_DIA = 20  # horas con dato necesarias para dar por bueno un día
 
 
@@ -1793,11 +1813,27 @@ def construir_tarjetas_kpi(lectura, mar=None, observaciones=None, boya=None, nom
         rocio = punto_de_rocio(ta, hr)
     detalle_humedad = f"rocío {rocio:.0f} °C · {confort_rocio(rocio)}" if rocio is not None else ""
 
+    # Acumulado de hoy y de ayer, con las lecturas horarias. Si faltan horas,
+    # se avisa: el total podría ser mayor.
+    detalle_lluvia = ""
+    acumulados = lluvia_por_dia(observaciones)
+    if acumulados:
+        partes = []
+        horas_hoy = int((datetime.now(ZONA_HORARIA) - datetime.now(ZONA_HORARIA).replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() // 3600)
+        for clave, etiqueta, horas_esperadas in (("hoy", "Hoy", horas_hoy), ("ayer", "Ayer", 24)):
+            mm, horas = acumulados[clave]
+            if horas == 0:
+                continue
+            texto = f"{etiqueta}: <strong>{_es(mm)} mm</strong>"
+            if horas < horas_esperadas - 1:
+                texto += f' <span title="Faltan lecturas de {horas_esperadas - horas} h: el total puede ser mayor">*</span>'
+            partes.append(texto)
+        detalle_lluvia = " · ".join(partes)
     kpis_aire = [
         ("Temperatura", MATERIAL["rojo"], fmt(lectura.get("ta"), "°C"), detalle_temperatura + minigrafico),
         ("Viento", MATERIAL["indigo"], fmt(viento_kmh, "km/h"), " · ".join(detalles_viento)),
         ("Humedad", MATERIAL["teal"], fmt(lectura.get("hr"), "%", 0), detalle_humedad),
-        ("Lluvia (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), ""),
+        ("Lluvia (última hora)", MATERIAL["azul_claro"], fmt(lectura.get("prec"), "mm"), detalle_lluvia),
     ]
     kpis = []  # las del mar
     fuente_mar = None
