@@ -63,3 +63,21 @@ def test_banner_con_avisos_toma_el_color_del_peor_nivel():
     banner = f.construir_banner_avisos([aviso, dict(aviso, nivel="naranja", evento="Aviso naranja por tormentas")], "Zona")
     assert "avisos-naranja" in banner and "2 avisos meteorológicos" in banner
     assert banner.count('class="aviso-meteo') == 2
+
+
+
+def test_banner_agrupa_por_dia_y_ordena_por_nivel():
+    ahora = datetime(2026, 9, 30, 10, 0, tzinfo=timezone.utc)  # miércoles
+    def aviso(nivel, evento, desde_h, hasta_h):
+        return {"nivel": nivel, "evento": evento, "titular": "", "descripcion": "", "zonas": [],
+                "inicio": ahora + timedelta(hours=desde_h), "fin": ahora + timedelta(hours=hasta_h)}
+    banner = f.construir_banner_avisos([
+        aviso("amarillo", "Lluvias hoy", -2, 6), aviso("naranja", "Tormentas hoy", 1, 8),
+        aviso("amarillo", "Lluvias jueves", 20, 30), aviso("rojo", "Lluvias jueves rojo", 24, 30),
+        aviso("amarillo", "Viento viernes", 46, 50),
+    ], "Zona", ahora=ahora)
+    orden = [banner.index(t) for t in (
+        "Hoy, miércoles 30 de septiembre", ">Tormentas hoy<", ">Lluvias hoy<",
+        "Mañana, jueves 1 de octubre", ">Lluvias jueves rojo<", ">Lluvias jueves<",
+        "Viernes 2 de octubre", ">Viento viernes<")]
+    assert orden == sorted(orden) and len(set(orden)) == len(orden)

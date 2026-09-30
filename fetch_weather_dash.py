@@ -825,8 +825,10 @@ def _momento_aviso(momento):
 
 def construir_banner_avisos(avisos, zona, error=False, ahora=None):
     """Recuadro de avisos de la zona de la estación, siempre bien visible
-    arriba: en verde si no hay ninguno, con un bloque por aviso (del color
-    de su nivel) si los hay."""
+    arriba: en verde si no hay ninguno y, si los hay, agrupados por el día
+    en que empiezan (los que ya están en vigor, en «hoy») y ordenados dentro
+    de cada día del nivel más alto al más bajo, un bloque por aviso del
+    color de su nivel."""
     enlace = '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos" target="_blank" rel="noopener">Ver en aemet.es</a>'
     zona_html = html.escape(zona)
 
@@ -846,23 +848,43 @@ def construir_banner_avisos(avisos, zona, error=False, ahora=None):
                         f"{zona_html} · AEMET Meteoalerta · {enlace}")
 
     ahora = ahora or datetime.now(timezone.utc)
-    items = []
+    hoy = ahora.astimezone(ZONA_HORARIA).date()
+
+    def dia_del_aviso(aviso):
+        """Día (hora local) en que empieza el aviso; los que ya están en vigor, hoy."""
+        inicio = aviso["inicio"]
+        return max(inicio, ahora).astimezone(ZONA_HORARIA).date() if inicio else hoy
+
+    def titulo_dia(dia):
+        texto = f"{NOMBRES_DIA[dia.weekday()]} {dia.day} de {NOMBRES_MES[dia.month]}"
+        diferencia = (dia - hoy).days
+        return f"Hoy, {texto}" if diferencia == 0 else f"Mañana, {texto}" if diferencia == 1 else texto.capitalize()
+
+    # Agrupados por día y, dentro de cada día, del nivel más alto al más bajo.
+    por_dia = {}
     for aviso in avisos:
-        inicio, fin = aviso["inicio"], aviso["fin"]
-        if inicio and inicio > ahora:
-            cuando = f"De {_momento_aviso(inicio)}"
-        else:
-            cuando = "En vigor"
-        if fin:
-            cuando += f" hasta {_momento_aviso(fin)}"
-        titulo = aviso["evento"] or aviso["titular"] or f"Aviso {aviso['nivel']}"
-        descripcion = f'<p>{html.escape(aviso["descripcion"])}</p>' if aviso["descripcion"] else ""
-        items.append(
-            f'<div class="aviso-meteo nivel-{aviso["nivel"]}">'
-            f'<div class="aviso-cabecera"><strong>{html.escape(titulo)}</strong>'
-            f'<span class="aviso-cuando">{cuando}</span></div>'
-            f"{descripcion}</div>"
-        )
+        por_dia.setdefault(dia_del_aviso(aviso), []).append(aviso)
+    lejano = datetime.max.replace(tzinfo=timezone.utc)
+    items = []
+    for dia in sorted(por_dia):
+        items.append(f'<p class="avisos-dia">{titulo_dia(dia)}</p>')
+        del_dia = sorted(por_dia[dia], key=lambda a: (-NIVELES_AVISO[a["nivel"]], a["inicio"] or ahora, a["fin"] or lejano))
+        for aviso in del_dia:
+            inicio, fin = aviso["inicio"], aviso["fin"]
+            if inicio and inicio > ahora:
+                cuando = f"De {_momento_aviso(inicio)}"
+            else:
+                cuando = "En vigor"
+            if fin:
+                cuando += f" hasta {_momento_aviso(fin)}"
+            titulo = aviso["evento"] or aviso["titular"] or f"Aviso {aviso['nivel']}"
+            descripcion = f'<p>{html.escape(aviso["descripcion"])}</p>' if aviso["descripcion"] else ""
+            items.append(
+                f'<div class="aviso-meteo nivel-{aviso["nivel"]}">'
+                f'<div class="aviso-cabecera"><strong>{html.escape(titulo)}</strong>'
+                f'<span class="aviso-cuando">{cuando}</span></div>'
+                f"{descripcion}</div>"
+            )
     peor = max((a["nivel"] for a in avisos), key=NIVELES_AVISO.get)
     numero = f"{len(avisos)} aviso{'s' if len(avisos) > 1 else ''} meteorológico{'s' if len(avisos) > 1 else ''}"
     return recuadro(f"avisos-activos avisos-{peor}", "⚠", numero,
