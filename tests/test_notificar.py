@@ -183,15 +183,19 @@ def test_aviso_nuevo_se_publica_y_guarda_el_id_en_el_issue():
     assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 101
 
 
-def test_actualizacion_publica_un_mensaje_nuevo_completo_que_enlaza_al_anterior():
+def test_actualizacion_publica_un_mensaje_nuevo_completo_y_marca_el_anterior_como_sustituido():
     antes = n.episodios([tramo("amarillo", 2, 6)], ZONA)[0]
     antes["telegram_id"] = 55
     despues = n.episodios([tramo("naranja", 2, 6)], ZONA)
     (accion,) = n.decidir(despues, [abierto(7, antes)], AHORA)
     github, telegram = GitHubFalso(), TelegramFalso()
-    n.aplicar([accion], github, AHORA, telegram)
-    (llamada,) = telegram.llamadas  # el mensaje anterior no se edita
+    n.aplicar([accion], github, AHORA, telegram, {7: abierto(7, antes)[1]})
+    enviar, editar = telegram.llamadas
+    llamada = enviar
     assert llamada[0] == "enviar" and llamada[2] == 55  # responde al anterior
+    # el anterior queda marcado como sustituido, con enlace al nuevo (id 101)
+    assert editar[:2] == ("editar", 55) and editar[2].startswith('🔄 <b>Aviso sustituido por <a href="https://t.me/canal/101">uno posterior</a>')
+    assert "🟡 Aviso <b>amarillo</b>" in editar[2]
     texto = llamada[1]
     assert texto.startswith("🔄 <b>Aviso actualizado</b>") and "Sube a nivel <b>naranja</b>" in texto
     assert '<a href="https://t.me/canal/55">aviso anterior</a>' in texto
@@ -204,7 +208,7 @@ def test_si_falla_el_mensaje_nuevo_se_conserva_el_id_anterior():
     antes["telegram_id"] = 55
     (accion,) = n.decidir(n.episodios([tramo("naranja", 2, 6)], ZONA), [abierto(7, antes)], AHORA)
     github = GitHubFalso()
-    n.aplicar([accion], github, AHORA, TelegramFalso(falla=True))
+    n.aplicar([accion], github, AHORA, TelegramFalso(falla=True), {7: abierto(7, antes)[1]})
     assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 55
 
 
