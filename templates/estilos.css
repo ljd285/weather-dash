@@ -194,6 +194,8 @@ a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visib
 .avisos-amarillo .avisos-icono { color: #212121; }
 .avisos-activos .avisos-resumen { margin-bottom: 0.75rem; }
 .avisos-activos .aviso-meteo:last-child { margin-bottom: 0; }
+.avisos-dia { margin: 0.9rem 0 0.4rem; font-size: 0.95rem; font-weight: 700; }
+.avisos-resumen + .avisos-dia { margin-top: 0; }
 .aviso-meteo { border-radius: 6px; padding: 0.7rem 0.9rem; margin-bottom: 0.5rem; border-left: 6px solid rgba(0,0,0,0.35); }
 .aviso-meteo p { margin: 0.35rem 0 0; font-size: 0.95rem; }
 .aviso-meteo strong { font-size: 1.05rem; }
