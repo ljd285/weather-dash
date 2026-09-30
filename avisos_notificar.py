@@ -242,7 +242,8 @@ def leer_estado(texto):
 # --- Texto de los mensajes de Telegram --------------------------------------
 
 #: Encabezado del mensaje original cuando el aviso ya no está en vigor.
-CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>", "terminado": "⌛ <b>Aviso finalizado</b>"}
+CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>", "terminado": "⌛ <b>Aviso finalizado</b>",
+                    "sustituido": "🔄 <b>Aviso sustituido por uno posterior</b>"}
 MAX_DESCRIPCION_TELEGRAM = 400
 
 
@@ -250,9 +251,10 @@ def _html(texto):
     return html.escape(texto or "", quote=False)
 
 
-def texto_telegram(episodio, cierre=None):
-    """Mensaje HTML del aviso para el canal. `cierre`: "retirado" o
-    "terminado" para marcar el mensaje original cuando el aviso acaba."""
+def texto_telegram(episodio, cierre=None, enlace_nuevo=None):
+    """Mensaje HTML del aviso para el canal. `cierre`: "retirado", "terminado"
+    o "sustituido" para marcar el mensaje cuando el aviso acaba o AEMET lo
+    modifica (`enlace_nuevo`: enlace al mensaje que lo sustituye)."""
     nivel = episodio["nivel"]
     lineas = [
         f"{COLORES[nivel]} Aviso <b>{nivel}</b> por {_html(episodio['fenomeno'])}",
@@ -269,7 +271,10 @@ def texto_telegram(episodio, cierre=None):
             lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel']}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
                           + (f": {descripcion}" if descripcion else ""))
     lineas += ["", '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">Avisos en AEMET</a>', "Fuente: AEMET"]
-    return "\n".join(([CIERRES_TELEGRAM[cierre]] if cierre else []) + lineas)
+    marca = [CIERRES_TELEGRAM[cierre]] if cierre else []
+    if cierre == "sustituido" and enlace_nuevo:
+        marca = [f'🔄 <b>Aviso sustituido por <a href="{enlace_nuevo}">uno posterior</a></b>']
+    return "\n".join(marca + lineas)
 
 
 def texto_respuesta_telegram():
@@ -388,6 +393,10 @@ def aplicar(acciones, github, ahora, telegram=None, estados=None):
                 nuevo = _telegram(telegram, telegram.enviar, texto_telegram_actualizado(episodio, cambios, enlace),
                                   responder_a=telegram_id)
                 if nuevo:
+                    anterior = estados.get(numero)
+                    if anterior:  # edición silenciosa: el anterior queda marcado como sustituido
+                        _telegram(telegram, telegram.editar, telegram_id, texto_telegram(
+                            anterior, cierre="sustituido", enlace_nuevo=_telegram(telegram, telegram.enlace_mensaje, nuevo)))
                     episodio = dict(episodio, telegram_id=nuevo)
             elif telegram:  # el aviso no llegó a publicarse: se publica ya actualizado
                 telegram_id = _telegram(telegram, telegram.enviar, texto_telegram(episodio))
