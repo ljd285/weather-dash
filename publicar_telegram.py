@@ -38,6 +38,12 @@ class Telegram:
             return cls(token, chat_id or "@canal", simulacro=True)
         return cls(token, chat_id) if token and chat_id else None
 
+    def enlace_mensaje(self, message_id):
+        """Enlace público al mensaje (solo si el canal tiene @usuario), o None."""
+        if self.chat_id.startswith("@"):
+            return f"https://t.me/{self.chat_id[1:]}/{message_id}"
+        return None
+
     def _llamar(self, metodo, **datos):
         if self.simulacro:
             print(f"[simulacro] Telegram {metodo}: {json.dumps(datos, ensure_ascii=False)[:400]}")

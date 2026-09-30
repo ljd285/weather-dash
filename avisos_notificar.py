@@ -192,7 +192,7 @@ def cuerpo(episodio, mencion=True, ausente_desde=None):
     if mencion and AVISOS_NOTIFICAR_A:
         lineas.append(f"@{AVISOS_NOTIFICAR_A}\n")
     lineas.append(f"**Aviso {episodio['nivel']} por {episodio['fenomeno']}** en **{episodio['zona']}**, "
-                  f"del {f._momento_aviso(episodio['inicio'])} al {f._momento_aviso(episodio['fin'])} (hora peninsular).\n")
+                  f"del {f._momento_aviso(episodio['inicio'])} al {f._momento_aviso(episodio['fin'])}.\n")
     for tramo in episodio["tramos"]:
         lineas.append(f"- {COLORES[tramo['nivel']]} **{tramo['nivel']}**, del {f._momento_aviso(tramo['inicio'])} "
                       f"al {f._momento_aviso(tramo['fin'])}" + (f": {tramo['descripcion']}" if tramo["descripcion"] else ""))
@@ -272,13 +272,21 @@ def texto_telegram(episodio, cierre=None):
     return "\n".join(([CIERRES_TELEGRAM[cierre]] if cierre else []) + lineas)
 
 
-def texto_respuesta_telegram(cambios=None, retirado=False):
-    """Respuesta al mensaje original: es la que hace sonar la notificación."""
-    if retirado:
-        return "✅ <b>AEMET ha retirado este aviso</b> antes de la hora prevista de fin."
+def texto_respuesta_telegram():
+    """Respuesta al mensaje original cuando AEMET retira el aviso."""
+    return "✅ <b>AEMET ha retirado este aviso</b> antes de la hora prevista de fin."
+
+
+def texto_telegram_actualizado(episodio, cambios, enlace_anterior=None):
+    """Mensaje nuevo, completo, para un aviso que AEMET ha modificado: dice
+    qué ha cambiado y enlaza al aviso anterior (al que además se responde)."""
     negrita = re.compile(r"\*\*(.+?)\*\*")
-    lineas = ["• " + negrita.sub(r"<b>\1</b>", _html(c)) for c in cambios]
-    return "⚠️ <b>Actualización del aviso</b>\n" + "\n".join(lineas)
+    lineas = ["🔄 <b>Aviso actualizado</b>"] + ["• " + negrita.sub(r"<b>\1</b>", _html(c)) for c in cambios]
+    if enlace_anterior:
+        lineas.append(f'↩️ Sustituye al <a href="{enlace_anterior}">aviso anterior</a>')
+    else:
+        lineas.append("↩️ Sustituye al aviso anterior")
+    return "\n".join(lineas) + "\n\n" + texto_telegram(episodio)
 
 
 # --- GitHub -------------------------------------------------------------------
@@ -374,9 +382,13 @@ def aplicar(acciones, github, ahora, telegram=None, estados=None):
             _, numero, episodio, cambios = accion
             telegram_id = episodio.get("telegram_id")
             if telegram_id:
-                # Se edita el original (queda al día) y se responde (es lo que suena).
-                _telegram(telegram, telegram.editar, telegram_id, texto_telegram(episodio))
-                _telegram(telegram, telegram.enviar, texto_respuesta_telegram(cambios), responder_a=telegram_id)
+                # Mensaje nuevo y completo, en respuesta al anterior. El anterior no
+                # se toca; los cierres posteriores actúan sobre el nuevo.
+                enlace = _telegram(telegram, telegram.enlace_mensaje, telegram_id)
+                nuevo = _telegram(telegram, telegram.enviar, texto_telegram_actualizado(episodio, cambios, enlace),
+                                  responder_a=telegram_id)
+                if nuevo:
+                    episodio = dict(episodio, telegram_id=nuevo)
             elif telegram:  # el aviso no llegó a publicarse: se publica ya actualizado
                 telegram_id = _telegram(telegram, telegram.enviar, texto_telegram(episodio))
                 episodio = dict(episodio, telegram_id=telegram_id)
@@ -394,7 +406,7 @@ def aplicar(acciones, github, ahora, telegram=None, estados=None):
             _, numero, estado = accion
             if estado.get("telegram_id"):
                 _telegram(telegram, telegram.editar, estado["telegram_id"], texto_telegram(estado, cierre="retirado"))
-                _telegram(telegram, telegram.enviar, texto_respuesta_telegram(retirado=True), responder_a=estado["telegram_id"])
+                _telegram(telegram, telegram.enviar, texto_respuesta_telegram(), responder_a=estado["telegram_id"])
             github.comentar(numero, mencion + "✅ **AEMET ha retirado este aviso** antes de la hora prevista de fin.")
             github.editar(numero, state="closed", state_reason="not_planned")
             print(f"Aviso #{numero} retirado por AEMET: cerrado.")

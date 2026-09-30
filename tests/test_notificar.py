@@ -82,6 +82,7 @@ def test_titulo_cuerpo_y_estado():
     ep = n.episodios([tramo("amarillo", 2, 6), tramo("naranja", 6, 10)], ZONA)[0]
     assert n.titulo(ep).startswith("🟠 Aviso naranja por lluvias – Litoral norte de Valencia (")
     texto = n.cuerpo(ep)
+    assert "hora peninsular" not in texto
     assert texto.startswith("@") and "🟡 **amarillo**" in texto and "🟠 **naranja**" in texto
     estado = n.leer_estado(texto)
     assert estado["nivel"] == "naranja" and estado["fin"] == ep["fin"] and estado["ausente_desde"] is None
@@ -145,6 +146,9 @@ class TelegramFalso:
         self.siguiente += 1
         return self.siguiente
 
+    def enlace_mensaje(self, message_id):
+        return f"https://t.me/canal/{message_id}"
+
     def editar(self, message_id, texto):
         if self.falla:
             raise RuntimeError("caído")
@@ -168,7 +172,7 @@ def test_texto_telegram_escapa_html_y_marca_el_cierre():
     assert texto.startswith("🟠 Aviso <b>naranja</b> por lluvias") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
     assert "Fuente: AEMET" in texto and len(texto) < 4096
     assert n.texto_telegram(ep, cierre="retirado").startswith("🚫") and "⬜" not in n.texto_telegram(ep)
-    assert "<b>naranja</b>" in n.texto_respuesta_telegram(["⬆️ Sube a nivel **naranja** 🟠"])
+    assert "retirado" in n.texto_respuesta_telegram()
 
 
 def test_aviso_nuevo_se_publica_y_guarda_el_id_en_el_issue():
@@ -179,15 +183,28 @@ def test_aviso_nuevo_se_publica_y_guarda_el_id_en_el_issue():
     assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 101
 
 
-def test_actualizacion_edita_el_original_y_responde_conservando_el_id():
+def test_actualizacion_publica_un_mensaje_nuevo_completo_que_enlaza_al_anterior():
     antes = n.episodios([tramo("amarillo", 2, 6)], ZONA)[0]
     antes["telegram_id"] = 55
     despues = n.episodios([tramo("naranja", 2, 6)], ZONA)
     (accion,) = n.decidir(despues, [abierto(7, antes)], AHORA)
     github, telegram = GitHubFalso(), TelegramFalso()
     n.aplicar([accion], github, AHORA, telegram)
-    assert [ll[0] for ll in telegram.llamadas] == ["editar", "enviar"]
-    assert telegram.llamadas[0][1] == 55 and telegram.llamadas[1][2] == 55
+    (llamada,) = telegram.llamadas  # el mensaje anterior no se edita
+    assert llamada[0] == "enviar" and llamada[2] == 55  # responde al anterior
+    texto = llamada[1]
+    assert texto.startswith("🔄 <b>Aviso actualizado</b>") and "Sube a nivel <b>naranja</b>" in texto
+    assert '<a href="https://t.me/canal/55">aviso anterior</a>' in texto
+    assert "🟠 Aviso <b>naranja</b> por lluvias" in texto and "📍 Litoral norte de Valencia" in texto  # aviso completo
+    assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 101  # el cierre actuará sobre el nuevo
+
+
+def test_si_falla_el_mensaje_nuevo_se_conserva_el_id_anterior():
+    antes = n.episodios([tramo("amarillo", 2, 6)], ZONA)[0]
+    antes["telegram_id"] = 55
+    (accion,) = n.decidir(n.episodios([tramo("naranja", 2, 6)], ZONA), [abierto(7, antes)], AHORA)
+    github = GitHubFalso()
+    n.aplicar([accion], github, AHORA, TelegramFalso(falla=True))
     assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 55
 
 
