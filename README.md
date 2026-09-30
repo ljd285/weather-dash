@@ -141,8 +141,8 @@ Además del correo, el mismo workflow puede publicar los avisos en un **canal de
 **Cómo se publica:**
 
 - Cada episodio de aviso es **un mensaje** con el nivel (en negrita, con su círculo de color 🟡🟠🔴), el fenómeno, la zona, las horas, la descripción y un enlace a los avisos de AEMET.
-- Si el aviso cambia, el mensaje original se **edita** (queda siempre al día) y se publica una **respuesta** con lo que ha cambiado, que es la que hace sonar la notificación.
-- Si AEMET lo retira, el original se marca como retirado y se responde. Cuando termina a su hora, el original se marca como finalizado, sin notificar.
+- Si AEMET modifica el aviso, se publica un **mensaje nuevo y completo** («🔄 Aviso actualizado», con lo que ha cambiado y el aviso entero), en respuesta al anterior y con un enlace a él. El mensaje anterior no se toca.
+- Si AEMET lo retira, el último mensaje del aviso se marca como retirado y se responde. Cuando termina a su hora, se marca como finalizado, sin notificar.
 - El id del mensaje se guarda en el estado oculto del issue, sin ficheros aparte. Si Telegram falla, los issues y el correo no se ven afectados y el aviso se publica en la siguiente ejecución.
 - Para aplicar un formato nuevo a los avisos ya publicados: *Actions → Notificar avisos AEMET → Run workflow* con la casilla **Borrar y volver a publicar en Telegram** marcada. Borra el mensaje de cada aviso abierto y lo publica de nuevo.
 - Probar sin publicar: `AVISOS_SIMULACRO=1 python avisos_notificar.py` muestra lo que enviaría.
