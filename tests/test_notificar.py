@@ -170,7 +170,8 @@ def test_texto_telegram_escapa_html_y_marca_el_cierre():
     ep = n.episodios([tramo("naranja", 2, 8, descripcion="Racha <90 km/h> & lluvia")], ZONA)[0]
     texto = n.texto_telegram(ep)
     assert texto.startswith("🌧️ <b>LLUVIAS</b> 🟠 <b>NARANJA</b> 🟠\n") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
-    assert "Fuente: AEMET" in texto and len(texto) < 4096
+    assert texto.endswith('Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a>') and "Avisos en AEMET" not in texto
+    assert len(texto) < 4096
     assert n.texto_telegram(ep, cierre="retirado").startswith("🚫") and "⬜" not in n.texto_telegram(ep)
     assert "retirado" in n.texto_respuesta_telegram()
 
@@ -263,3 +264,10 @@ def test_emoji_del_fenomeno_y_dias_con_mayuscula():
     ep = n.episodios([tramo("rojo", 2, 8, fenomeno="temperaturas máximas")], ZONA)[0]
     assert n.texto_telegram(ep).startswith("🥵 <b>TEMPERATURAS MÁXIMAS</b> 🔴 <b>ROJO</b> 🔴\n")
     assert n.f._momento_aviso(AHORA).split()[0] in ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
+
+
+def test_los_tramos_de_telegram_empiezan_por_mayuscula():
+    ep = n.episodios([tramo("amarillo", 2, 6), tramo("naranja", 6, 10)], ZONA)[0]
+    lineas = n.texto_telegram(ep).splitlines()
+    assert any(l.startswith("🟡 <b>Amarillo</b>, ") for l in lineas) and any(l.startswith("🟠 <b>Naranja</b>, ") for l in lineas)
+    assert not any("<b>amarillo</b>" in l or "<b>naranja</b>" in l for l in lineas)

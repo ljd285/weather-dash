@@ -281,9 +281,9 @@ def texto_telegram(episodio, cierre=None, enlace_nuevo=None):
         if len(tramos) == 1:  # el encabezado ya dice el nivel y las horas
             lineas.append(descripcion)
         else:
-            lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel']}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
+            lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel'].capitalize()}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
                           + (f": {descripcion}" if descripcion else ""))
-    lineas += ["", '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">Avisos en AEMET</a>', "Fuente: AEMET"]
+    lineas += ["", 'Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a>']
     marca = [CIERRES_TELEGRAM[cierre]] if cierre else []
     if cierre == "sustituido" and enlace_nuevo:
         marca = [f'🔄 <b>Aviso sustituido por <a href="{enlace_nuevo}">uno posterior</a></b>']
