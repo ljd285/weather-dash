@@ -81,3 +81,27 @@ def test_banner_agrupa_por_dia_y_ordena_por_nivel():
         "Mañana, jueves 1 de octubre", ">Lluvias jueves rojo<", ">Lluvias jueves<",
         "Viernes 2 de octubre", ">Viento viernes<")]
     assert orden == sorted(orden) and len(set(orden)) == len(orden)
+
+
+def test_aviso_de_varios_dias_sale_en_cada_dia():
+    ahora = datetime(2026, 9, 30, 10, 0, tzinfo=timezone.utc)  # miércoles, 12:00 local
+
+    def aviso(nivel, evento, inicio, fin):
+        return {"nivel": nivel, "evento": evento, "titular": "", "descripcion": "60 mm en 1 h", "zonas": [],
+                "inicio": inicio, "fin": fin}
+    rojo = aviso("rojo", "Rojo jue-vie", datetime(2026, 10, 1, 16, 0, tzinfo=timezone.utc),  # jue 18:00 local
+                 datetime(2026, 10, 2, 7, 0, tzinfo=timezone.utc))  # vie 09:00 local
+    costero = aviso("amarillo", "Costero mié-vie", datetime(2026, 9, 30, 6, 0, tzinfo=timezone.utc),  # ya en vigor
+                    datetime(2026, 10, 2, 22, 0, tzinfo=timezone.utc))  # sáb 00:00 local: no pasa al sábado
+    naranja = aviso("naranja", "Naranja vie", datetime(2026, 10, 2, 4, 0, tzinfo=timezone.utc),
+                    datetime(2026, 10, 2, 10, 0, tzinfo=timezone.utc))
+    banner = f.construir_banner_avisos([costero, rojo, naranja], "Zona", ahora=ahora)
+    assert "3 avisos meteorológicos" in banner and "sábado" not in banner
+    hoy, jueves, viernes = (banner.split('<p class="avisos-dia">')[i] for i in (1, 2, 3))
+    assert hoy.startswith("Hoy, miércoles") and "En vigor hasta las 24:00 · sigue el jueves" in hoy
+    assert jueves.index(">Rojo jue-vie<") < jueves.index(">Costero mié-vie<")
+    assert "De 18:00 a 24:00 · sigue el viernes" in jueves and "Todo el día · viene del miércoles · sigue el viernes" in jueves
+    assert viernes.index(">Rojo jue-vie<") < viernes.index(">Naranja vie<") < viernes.index(">Costero mié-vie<")
+    assert "Hasta las 09:00 · viene del jueves" in viernes and "Hasta las 24:00 · viene del jueves" in viernes
+    assert "De 06:00 a 12:00" in viernes
+    assert banner.count("60 mm en 1 h") == 6  # la descripción se repite en cada día
