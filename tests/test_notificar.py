@@ -169,7 +169,7 @@ class GitHubConNumero(GitHubFalso):
 def test_texto_telegram_escapa_html_y_marca_el_cierre():
     ep = n.episodios([tramo("naranja", 2, 8, descripcion="Racha <90 km/h> & lluvia")], ZONA)[0]
     texto = n.texto_telegram(ep)
-    assert texto.startswith("🟠 Aviso <b>naranja</b> por lluvias") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
+    assert texto.startswith("🌧️ <b>LLUVIAS</b> 🟠 <b>NARANJA</b> 🟠\n") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
     assert "Fuente: AEMET" in texto and len(texto) < 4096
     assert n.texto_telegram(ep, cierre="retirado").startswith("🚫") and "⬜" not in n.texto_telegram(ep)
     assert "retirado" in n.texto_respuesta_telegram()
@@ -195,11 +195,11 @@ def test_actualizacion_publica_un_mensaje_nuevo_completo_y_marca_el_anterior_com
     assert llamada[0] == "enviar" and llamada[2] == 55  # responde al anterior
     # el anterior queda marcado como sustituido, con enlace al nuevo (id 101)
     assert editar[:2] == ("editar", 55) and editar[2].startswith('🔄 <b>Aviso sustituido por <a href="https://t.me/canal/101">uno posterior</a>')
-    assert "🟡 Aviso <b>amarillo</b>" in editar[2]
+    assert "🌧️ <b>LLUVIAS</b> 🟡 <b>AMARILLO</b> 🟡" in editar[2]
     texto = llamada[1]
     assert texto.startswith("🔄 <b>Aviso actualizado</b>") and "Sube a nivel <b>naranja</b>" in texto
     assert '<a href="https://t.me/canal/55">aviso anterior</a>' in texto
-    assert "🟠 Aviso <b>naranja</b> por lluvias" in texto and "📍 Litoral norte de Valencia" in texto  # aviso completo
+    assert "🌧️ <b>LLUVIAS</b> 🟠 <b>NARANJA</b> 🟠" in texto and "📍 Litoral norte de Valencia" in texto  # aviso completo
     assert n.leer_estado(github.llamadas[-1][2]["body"])["telegram_id"] == 101  # el cierre actuará sobre el nuevo
 
 
@@ -255,3 +255,11 @@ def test_republicar_no_publica_si_no_puede_borrar():
     github, telegram = GitHubFalso(), TelegramFalso(falla=True)
     n.republicar_telegram([abierto(4, ep)], [], github, telegram)
     assert github.llamadas == [] and telegram.llamadas == []
+
+
+def test_emoji_del_fenomeno_y_dias_con_mayuscula():
+    assert [n.emoji_fenomeno(e) for e in ("lluvias", "temperaturas máximas", "temperaturas mínimas", "fenómenos costeros",
+                                          "vientos", "tormentas", "nevadas", "algo raro")] == ["🌧️", "🥵", "🥶", "🌊", "💨", "⛈️", "❄️", "⚠️"]
+    ep = n.episodios([tramo("rojo", 2, 8, fenomeno="temperaturas máximas")], ZONA)[0]
+    assert n.texto_telegram(ep).startswith("🥵 <b>TEMPERATURAS MÁXIMAS</b> 🔴 <b>ROJO</b> 🔴\n")
+    assert n.f._momento_aviso(AHORA).split()[0] in ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
