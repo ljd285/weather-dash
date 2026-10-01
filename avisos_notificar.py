@@ -34,6 +34,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+import contexto
 import fetch_weather_dash as f
 from config import AVISOS_NIVEL_MINIMO, AVISOS_NOTIFICAR_A, STATIONS
 from publicar_telegram import Telegram
@@ -87,7 +88,8 @@ def _episodio(tramos, zona):
         "inicio": min(t["inicio"] for t in tramos),
         "fin": max(t["fin"] for t in tramos),
         "tramos": [
-            {"nivel": t["nivel"], "inicio": t["inicio"], "fin": t["fin"], "descripcion": t["descripcion"]}
+            {"nivel": t["nivel"], "inicio": t["inicio"], "fin": t["fin"], "descripcion": t["descripcion"],
+             "probabilidad": t.get("probabilidad", "")}
             for t in tramos
         ],
     }
@@ -126,7 +128,7 @@ def decidir(actuales, abiertos, ahora, consulta_ok=True):
             continue
         numero, estado = candidatos[0]
         emparejados.add(numero)
-        episodio = dict(episodio, telegram_id=estado.get("telegram_id"))
+        episodio = dict(episodio, telegram_id=estado.get("telegram_id"), contexto=estado.get("contexto"))
         cambios = describir_cambios(estado, episodio, ahora)
         if cambios:
             acciones.append(("actualizar", numero, episodio, cambios))
@@ -179,6 +181,32 @@ def _firma_tramos(episodio, ahora):
 
 # --- Texto de los issues ----------------------------------------------------
 
+def _hora(momento):
+    return f"{momento.astimezone(f.ZONA_HORARIA):%H:%M}"
+
+
+def _dia_largo(momento):
+    local = momento.astimezone(f.ZONA_HORARIA)
+    return f"{f.NOMBRES_DIA[local.weekday()]} {local.day} de {f.NOMBRES_MES[local.month]}"
+
+
+def _franja(inicio, fin, dia_base=None):
+    """«14:00 – 21:00» si empieza y acaba el día `dia_base` (o el mismo día);
+    si no, con el día delante de cada hora."""
+    mismo_dia = inicio.astimezone(f.ZONA_HORARIA).date() == fin.astimezone(f.ZONA_HORARIA).date()
+    if mismo_dia and (dia_base is None or inicio.astimezone(f.ZONA_HORARIA).date() == dia_base):
+        return f"{_hora(inicio)} – {_hora(fin)}"
+    return f"{f._momento_aviso(inicio)} – {f._momento_aviso(fin)}"
+
+
+def _dias(episodio):
+    """«jueves 1 de octubre» o «del jueves 1 al viernes 2 de octubre»."""
+    ini, fin = episodio["inicio"], episodio["fin"] - timedelta(minutes=1)
+    if ini.astimezone(f.ZONA_HORARIA).date() == fin.astimezone(f.ZONA_HORARIA).date():
+        return _dia_largo(ini)
+    return f"del {_dia_largo(ini)} al {_dia_largo(fin)}"
+
+
 def titulo(episodio):
     nivel = episodio["nivel"]
     return (
@@ -187,20 +215,67 @@ def titulo(episodio):
     )
 
 
+#: Recomendaciones básicas por fenómeno (resumen de las de Protección Civil):
+#: (palabra del fenómeno, ya sin acentos ni mayúsculas, texto).
+RECOMENDACIONES = [
+    ("tormenta", "aléjate de zonas abiertas, árboles aislados y estructuras metálicas; ojo con el granizo, las rachas "
+                 "fuertes y las crecidas repentinas de barrancos."),
+    ("lluvia", "evita pasos subterráneos, sótanos, cauces y ramblas; no cruces calles ni vados inundados, ni a pie ni en "
+               "coche, y no aparques junto a barrancos."),
+    ("precipitacion", "evita pasos subterráneos, sótanos, cauces y ramblas; no cruces calles ni vados inundados, ni a pie "
+                      "ni en coche."),
+    ("costero", "no te acerques a escolleras, espigones ni paseos marítimos, y evita el baño y las actividades en el mar."),
+    ("viento", "asegura toldos, macetas y objetos de balcones y terrazas; evita parques y zonas arboladas, y conduce con "
+               "precaución, sobre todo con vehículos altos."),
+    ("maxima", "bebe agua a menudo, evita el sol y el esfuerzo en las horas centrales y atiende a mayores, niños y "
+               "personas con enfermedades crónicas."),
+    ("minima", "abrígate por capas, protege las tuberías del frío y revisa estufas y calefacciones."),
+    ("niebla", "reduce la velocidad, enciende las luces de cruce y aumenta la distancia de seguridad."),
+    ("nieve", "evita viajar si no es necesario; si lo haces, lleva cadenas, depósito lleno y ropa de abrigo."),
+    ("nevada", "evita viajar si no es necesario; si lo haces, lleva cadenas, depósito lleno y ropa de abrigo."),
+]
+
+
+def recomendacion(fenomeno):
+    nombre = f._normalizar(fenomeno)
+    texto = next((t for palabra, t in RECOMENDACIONES if palabra in nombre), None)
+    return texto or "sigue las indicaciones de Protección Civil y consulta la evolución del aviso en aemet.es."
+
+
+def _celda(texto):
+    return " ".join((texto or "").split()).replace("|", "/")
+
+
 def cuerpo(episodio, mencion=True, ausente_desde=None):
+    """Descripción del issue (y del correo): tabla de tramos, el bloque de
+    predicción, situación actual y contexto si lo hay (`episodio["contexto"]`,
+    ver contexto.py), recomendaciones y enlaces. Al final, el estado oculto."""
+    nivel = episodio["nivel"]
     lineas = []
     if mencion and AVISOS_NOTIFICAR_A:
         lineas.append(f"@{AVISOS_NOTIFICAR_A}\n")
-    lineas.append(f"**Aviso {episodio['nivel']} por {episodio['fenomeno']}** en **{episodio['zona']}**, "
-                  f"del {f._momento_aviso(episodio['inicio'])} al {f._momento_aviso(episodio['fin'])}.\n")
+    lineas.append(f"## {COLORES[nivel]} Aviso {nivel} por {episodio['fenomeno']} · {_dias(episodio)}\n")
+    lineas.append(f"**{episodio['zona']}**\n")
+    dia_base = episodio["inicio"].astimezone(f.ZONA_HORARIA).date()
+    lineas.append("| | Cuándo | Qué se espera |")
+    lineas.append("|---|---|---|")
     for tramo in episodio["tramos"]:
-        lineas.append(f"- {COLORES[tramo['nivel']]} **{tramo['nivel']}**, del {f._momento_aviso(tramo['inicio'])} "
-                      f"al {f._momento_aviso(tramo['fin'])}" + (f": {tramo['descripcion']}" if tramo["descripcion"] else ""))
+        destacado = tramo["nivel"] == nivel and len(episodio["tramos"]) > 1
+        marca = "**" if destacado else ""
+        que = _celda(tramo["descripcion"]) or "—"
+        if tramo.get("probabilidad"):
+            que += f" (probabilidad {_celda(tramo['probabilidad']).replace('%-', '–').replace('%', ' %')})"
+        lineas.append(f"| {COLORES[tramo['nivel']]} {marca}{tramo['nivel'].capitalize()}{marca} "
+                      f"| {marca}{_franja(tramo['inicio'], tramo['fin'], dia_base)}{marca} | {que} |")
+    if episodio.get("contexto"):
+        lineas.append("\n" + episodio["contexto"])
+    lineas.append(f"\n**Recomendaciones:** {recomendacion(episodio['fenomeno'])}")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    enlaces = ["[Avisos en aemet.es](https://www.aemet.es/es/eltiempo/prediccion/avisos)"]
+    enlaces = []
     if "/" in repo:
         usuario, nombre = repo.split("/", 1)
         enlaces.append(f"[Dashboard](https://{usuario}.github.io/{nombre}/)")
+    enlaces.append("[Avisos en aemet.es](https://www.aemet.es/es/eltiempo/prediccion/avisos)")
     lineas.append("\n" + " · ".join(enlaces))
     lineas.append("\n_Aviso automático a partir de AEMET Meteoalerta. Ante un aviso rojo, sigue los canales oficiales "
                   "(AEMET, 112, ES-Alert)._")
@@ -213,9 +288,13 @@ def _estado(episodio, ausente_desde=None):
         "zona": episodio["zona"], "fenomeno": episodio["fenomeno"], "nivel": episodio["nivel"],
         "inicio": episodio["inicio"].isoformat(), "fin": episodio["fin"].isoformat(),
         "tramos": [{"nivel": t["nivel"], "inicio": t["inicio"].isoformat(), "fin": t["fin"].isoformat(),
-                    "descripcion": t["descripcion"]} for t in episodio.get("tramos", [])],
+                    "descripcion": t["descripcion"], "probabilidad": t.get("probabilidad", "")}
+                   for t in episodio.get("tramos", [])],
         "ausente_desde": ausente_desde.isoformat() if ausente_desde else None,
         "telegram_id": episodio.get("telegram_id"),
+        # Bloque de predicción, situación actual y contexto (ver contexto.py),
+        # para no perderlo al reescribir la descripción del issue.
+        "contexto": (episodio.get("contexto") or "").replace("-->", "→") or None,
     }
 
 
@@ -384,13 +463,28 @@ def republicar_telegram(abiertos, acciones, github, telegram):
             print(f"Aviso #{numero} republicado en Telegram.")
 
 
-def aplicar(acciones, github, ahora, telegram=None, estados=None):
+def _con_contexto(episodio, preparar):
+    """El episodio con el bloque de predicción, situación actual y contexto
+    (contexto.py) recién calculado; si no se puede, conserva el anterior."""
+    if preparar is None:
+        return episodio
+    bloque = preparar(episodio)
+    return dict(episodio, contexto=bloque) if bloque else episodio
+
+
+def aplicar(acciones, github, ahora, telegram=None, estados=None, preparar=None):
     """`telegram`: cliente de publicar_telegram (o None). `estados`: {numero: estado}
-    de los issues abiertos, para marcar en el canal los avisos que terminan."""
+    de los issues abiertos, para marcar en el canal los avisos que terminan.
+    `preparar`: función que da el bloque de contexto meteorológico de un
+    episodio para el correo (contexto.preparar_contexto), o None."""
     mencion = f"@{AVISOS_NOTIFICAR_A} " if AVISOS_NOTIFICAR_A else ""
     estados = estados or {}
     for accion in acciones:
         tipo = accion[0]
+        if tipo == "crear":
+            accion = ("crear", _con_contexto(accion[1], preparar))
+        elif tipo == "actualizar":
+            accion = ("actualizar", accion[1], _con_contexto(accion[2], preparar), accion[3])
         if tipo == "crear":
             episodio = accion[1]
             issue = github.crear(titulo(episodio), cuerpo(episodio))
@@ -486,7 +580,7 @@ def main():
     abiertos = github.abiertos()
     acciones = decidir(actuales, abiertos, ahora, consulta_ok)
     print(f"{len(actuales)} episodio(s) de aviso vigentes; {len(acciones)} acción(es).")
-    aplicar(acciones, github, ahora, telegram, dict(abiertos))
+    aplicar(acciones, github, ahora, telegram, dict(abiertos), preparar=contexto.preparar_contexto)
     if os.environ.get("AVISOS_REPUBLICAR_TELEGRAM") == "1":
         republicar_telegram(abiertos, acciones, github, telegram)
     reintentar_telegram(abiertos, acciones, github, telegram, ahora)
