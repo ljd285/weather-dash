@@ -247,7 +247,7 @@ CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>", "termina
 MAX_DESCRIPCION_TELEGRAM = 400
 #: Emoji del fenómeno, según palabras de su nombre (ya sin acentos y en minúsculas).
 EMOJIS_FENOMENO = [
-    ("tormenta", "⛈️"), ("lluvia", "🌧️"), ("precipitacion", "🌧️"), ("viento", "💨"), ("costero", "🌊"),
+    ("tormenta", "🌩️"), ("lluvia", "🌧️"), ("precipitacion", "🌧️"), ("viento", "💨"), ("costero", "🌊"),
     ("maxima", "🥵"), ("minima", "🥶"), ("nevada", "❄️"), ("nieve", "❄️"), ("niebla", "🌫️"),
     ("polvo", "🌫️"), ("incendio", "🔥"), ("aludes", "🏔️"),
 ]

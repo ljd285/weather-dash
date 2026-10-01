@@ -260,7 +260,7 @@ def test_republicar_no_publica_si_no_puede_borrar():
 
 def test_emoji_del_fenomeno_y_dias_con_mayuscula():
     assert [n.emoji_fenomeno(e) for e in ("lluvias", "temperaturas máximas", "temperaturas mínimas", "fenómenos costeros",
-                                          "vientos", "tormentas", "nevadas", "algo raro")] == ["🌧️", "🥵", "🥶", "🌊", "💨", "⛈️", "❄️", "⚠️"]
+                                          "vientos", "tormentas", "nevadas", "algo raro")] == ["🌧️", "🥵", "🥶", "🌊", "💨", "🌩️", "❄️", "⚠️"]
     ep = n.episodios([tramo("rojo", 2, 8, fenomeno="temperaturas máximas")], ZONA)[0]
     assert n.texto_telegram(ep).startswith("🥵 <b>TEMPERATURAS MÁXIMAS</b> 🔴 <b>ROJO</b> 🔴\n")
     assert n.f._momento_aviso(AHORA).split()[0] in ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
