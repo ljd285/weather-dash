@@ -245,6 +245,18 @@ def leer_estado(texto):
 CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>", "terminado": "⌛ <b>Aviso finalizado</b>",
                     "sustituido": "🔄 <b>Aviso sustituido por uno posterior</b>"}
 MAX_DESCRIPCION_TELEGRAM = 400
+#: Emoji del fenómeno, según palabras de su nombre (ya sin acentos y en minúsculas).
+EMOJIS_FENOMENO = [
+    ("tormenta", "⛈️"), ("lluvia", "🌧️"), ("precipitacion", "🌧️"), ("viento", "💨"), ("costero", "🌊"),
+    ("maxima", "🥵"), ("minima", "🥶"), ("nevada", "❄️"), ("nieve", "❄️"), ("niebla", "🌫️"),
+    ("polvo", "🌫️"), ("incendio", "🔥"), ("aludes", "🏔️"),
+]
+EMOJI_FENOMENO_POR_DEFECTO = "⚠️"
+
+
+def emoji_fenomeno(fenomeno):
+    nombre = f._normalizar(fenomeno)
+    return next((emoji for palabra, emoji in EMOJIS_FENOMENO if palabra in nombre), EMOJI_FENOMENO_POR_DEFECTO)
 
 
 def _html(texto):
@@ -257,7 +269,8 @@ def texto_telegram(episodio, cierre=None, enlace_nuevo=None):
     modifica (`enlace_nuevo`: enlace al mensaje que lo sustituye)."""
     nivel = episodio["nivel"]
     lineas = [
-        f"{COLORES[nivel]} Aviso <b>{nivel}</b> por {_html(episodio['fenomeno'])}",
+        f"{emoji_fenomeno(episodio['fenomeno'])} <b>{_html(episodio['fenomeno']).upper()}</b> "
+        f"{COLORES[nivel]} <b>{nivel.upper()}</b> {COLORES[nivel]}",
         f"📍 {_html(episodio['zona'])}",
         f"🕑 {f._momento_aviso(episodio['inicio'])} → {f._momento_aviso(episodio['fin'])}",
         "",
@@ -268,9 +281,9 @@ def texto_telegram(episodio, cierre=None, enlace_nuevo=None):
         if len(tramos) == 1:  # el encabezado ya dice el nivel y las horas
             lineas.append(descripcion)
         else:
-            lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel']}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
+            lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel'].capitalize()}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
                           + (f": {descripcion}" if descripcion else ""))
-    lineas += ["", '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">Avisos en AEMET</a>', "Fuente: AEMET"]
+    lineas += ["", 'Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a>']
     marca = [CIERRES_TELEGRAM[cierre]] if cierre else []
     if cierre == "sustituido" and enlace_nuevo:
         marca = [f'🔄 <b>Aviso sustituido por <a href="{enlace_nuevo}">uno posterior</a></b>']

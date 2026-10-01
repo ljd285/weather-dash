@@ -820,7 +820,7 @@ def avisos_para_zona(avisos, zona, ahora=None):
 
 def _momento_aviso(momento):
     local = momento.astimezone(ZONA_HORARIA)
-    return f"{DIAS_SEMANA[local.weekday()]} {local:%d/%m %H:%M}"
+    return f"{DIAS_SEMANA[local.weekday()].capitalize()} {local:%d/%m %H:%M}"
 
 
 def construir_banner_avisos(avisos, zona, error=False, ahora=None):
