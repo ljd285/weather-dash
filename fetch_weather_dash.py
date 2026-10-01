@@ -747,10 +747,13 @@ def _avisos_de_cap(raiz):
     for info in raiz.findall("cap:info", NS_CAP):
         if not texto(info, "language").lower().startswith("es"):
             continue
-        nivel = None
+        nivel, probabilidad = None, ""
         for param in info.findall("cap:parameter", NS_CAP):
-            if "nivel" in texto(param, "valueName").lower():
+            nombre_param = texto(param, "valueName").lower()
+            if "nivel" in nombre_param:
                 nivel = _normalizar(texto(param, "value"))
+            elif "probabilidad" in nombre_param:
+                probabilidad = texto(param, "value")  # p. ej. "40%-70%"
         if nivel is None:
             nivel = NIVEL_POR_SEVERIDAD.get(texto(info, "severity").lower())
         if nivel not in NIVELES_AVISO:
@@ -769,6 +772,7 @@ def _avisos_de_cap(raiz):
             "fenomeno": fenomeno_de_evento(texto(info, "event")),
             "titular": texto(info, "headline"),
             "descripcion": texto(info, "description"),
+            "probabilidad": probabilidad,
             "inicio": fecha("onset") or fecha("effective"),
             "fin": fecha("expires"),
             "zonas": [

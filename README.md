@@ -118,6 +118,7 @@ El workflow **Notificar avisos AEMET** (`.github/workflows/avisos.yml`) revisa c
 
 - Cada episodio de aviso (una zona y un fenómeno) abre un **issue** con la etiqueta `aviso-aemet` que menciona al usuario de `AVISOS_NOTIFICAR_A`, y **GitHub le envía un correo**. Los tramos del mismo episodio (p. ej. amarillo y luego naranja) van en el mismo issue.
 - Si el aviso sube o baja de nivel o cambian sus horas, se añade un comentario (otro correo). Si AEMET lo retira antes de tiempo, se comenta y se cierra. Cuando termina a su hora, se cierra sin comentario (GitHub puede enviar igualmente un breve correo de "Closed").
+- El correo explica el aviso: una tabla con sus tramos (nivel, horas, qué se espera y probabilidad), lo que da la predicción por horas de AEMET para esas horas, cómo está ahora la estación, una comparación con lo normal y los récords («para hacerse una idea») y recomendaciones según el fenómeno (`contexto.py`). Lo que no se pueda obtener en ese momento se omite.
 - Cuando aparece, cambia o termina un aviso, el workflow lanza también la actualización del dashboard, para que la página lo muestre al momento sin esperar a su ejecución de cada hora.
 - El nivel mínimo se elige con `AVISOS_NIVEL_MINIMO` en `config.py` (`"amarillo"`, `"naranja"` o `"rojo"`).
 - Para que lleguen los correos, en <https://github.com/settings/notifications> debe estar activado el correo para "Participating, @mentions and custom".

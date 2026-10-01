@@ -83,7 +83,9 @@ def test_titulo_cuerpo_y_estado():
     assert n.titulo(ep).startswith("🟠 Aviso naranja por lluvias – Litoral norte de Valencia (")
     texto = n.cuerpo(ep)
     assert "hora peninsular" not in texto
-    assert texto.startswith("@") and "🟡 **amarillo**" in texto and "🟠 **naranja**" in texto
+    assert texto.startswith("@") and "## 🟠 Aviso naranja por lluvias · " in texto
+    assert "| 🟡 Amarillo |" in texto and "| 🟠 **Naranja** |" in texto  # el nivel más alto, destacado
+    assert "**Recomendaciones:** evita pasos subterráneos" in texto
     estado = n.leer_estado(texto)
     assert estado["nivel"] == "naranja" and estado["fin"] == ep["fin"] and estado["ausente_desde"] is None
     assert n.leer_estado("un issue cualquiera") is None
@@ -269,5 +271,6 @@ def test_emoji_del_fenomeno_y_dias_con_mayuscula():
 def test_los_tramos_de_telegram_empiezan_por_mayuscula():
     ep = n.episodios([tramo("amarillo", 2, 6), tramo("naranja", 6, 10)], ZONA)[0]
     lineas = n.texto_telegram(ep).splitlines()
-    assert any(l.startswith("🟡 <b>Amarillo</b>, ") for l in lineas) and any(l.startswith("🟠 <b>Naranja</b>, ") for l in lineas)
-    assert not any("<b>amarillo</b>" in l or "<b>naranja</b>" in l for l in lineas)
+    assert any(linea.startswith("🟡 <b>Amarillo</b>, ") for linea in lineas)
+    assert any(linea.startswith("🟠 <b>Naranja</b>, ") for linea in lineas)
+    assert not any("<b>amarillo</b>" in linea or "<b>naranja</b>" in linea for linea in lineas)
