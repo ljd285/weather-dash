@@ -829,10 +829,10 @@ def _momento_aviso(momento):
 
 def construir_banner_avisos(avisos, zona, error=False, ahora=None):
     """Recuadro de avisos de la zona de la estación, siempre bien visible
-    arriba: en verde si no hay ninguno y, si los hay, agrupados por el día
-    en que empiezan (los que ya están en vigor, en «hoy») y ordenados dentro
-    de cada día del nivel más alto al más bajo, un bloque por aviso del
-    color de su nivel."""
+    arriba: en verde si no hay ninguno y, si los hay, agrupados por día (un
+    aviso que abarca varios días sale en cada uno, con las horas de ese día)
+    y ordenados dentro de cada día del nivel más alto al más bajo, un bloque
+    por aviso del color de su nivel."""
     enlace = '<a href="https://www.aemet.es/es/eltiempo/prediccion/avisos" target="_blank" rel="noopener">Ver en aemet.es</a>'
     zona_html = html.escape(zona)
 
@@ -854,39 +854,75 @@ def construir_banner_avisos(avisos, zona, error=False, ahora=None):
     ahora = ahora or datetime.now(timezone.utc)
     hoy = ahora.astimezone(ZONA_HORARIA).date()
 
-    def dia_del_aviso(aviso):
-        """Día (hora local) en que empieza el aviso; los que ya están en vigor, hoy."""
-        inicio = aviso["inicio"]
-        return max(inicio, ahora).astimezone(ZONA_HORARIA).date() if inicio else hoy
+    def a_local(momento):
+        return momento.astimezone(ZONA_HORARIA)
+
+    def medianoche(dia):
+        return datetime.combine(dia, datetime.min.time(), tzinfo=ZONA_HORARIA)
+
+    def tramos_por_dia(aviso):
+        """(día, inicio, fin) de cada día local que abarca el aviso, desde hoy:
+        un aviso de jueves a viernes sale en los dos días, cada uno con sus
+        horas. Uno que acaba justo a las 00:00 no pasa al día siguiente."""
+        inicio = max(aviso["inicio"] or ahora, ahora)
+        fin = aviso["fin"]
+        primero = a_local(inicio).date()
+        ultimo = a_local(fin - timedelta(microseconds=1)).date() if fin else primero
+        dia, resultado = primero, []
+        while dia <= ultimo:
+            desde = max(inicio, medianoche(dia))
+            hasta = min(fin, medianoche(dia + timedelta(days=1))) if fin else None
+            resultado.append((dia, desde, hasta))
+            dia += timedelta(days=1)
+        return resultado
+
+    def cuando(aviso, dia, desde, hasta):
+        """«De 18:00 a 24:00 · sigue el viernes», «Hasta las 09:00 · viene del
+        jueves», «Todo el día»... para el tramo de un aviso en un día."""
+        en_vigor = desde <= ahora
+        empieza_hoy = en_vigor or a_local(desde) > medianoche(dia)  # no viene del día anterior
+        if aviso["inicio"] and a_local(aviso["inicio"]).date() == dia and not en_vigor:
+            empieza_hoy = True
+        sigue = aviso["fin"] is not None and hasta is not None and aviso["fin"] > hasta
+        hasta_medianoche = hasta is not None and hasta >= medianoche(dia + timedelta(days=1))
+        fin_txt = "24:00" if sigue or hasta_medianoche else (f"{a_local(hasta):%H:%M}" if hasta else "")
+        if en_vigor:
+            texto = f"En vigor hasta las {fin_txt}" if fin_txt else "En vigor"
+        elif empieza_hoy:
+            texto = f"De {a_local(desde):%H:%M} a {fin_txt}" if fin_txt else f"Desde las {a_local(desde):%H:%M}"
+        elif sigue:
+            texto = "Todo el día"
+        else:
+            texto = f"Hasta las {fin_txt}"
+        if not empieza_hoy:
+            texto += f" · viene del {NOMBRES_DIA[(dia - timedelta(days=1)).weekday()]}"
+        if sigue:
+            texto += f" · sigue el {NOMBRES_DIA[(dia + timedelta(days=1)).weekday()]}"
+        return texto
 
     def titulo_dia(dia):
         texto = f"{NOMBRES_DIA[dia.weekday()]} {dia.day} de {NOMBRES_MES[dia.month]}"
         diferencia = (dia - hoy).days
         return f"Hoy, {texto}" if diferencia == 0 else f"Mañana, {texto}" if diferencia == 1 else texto.capitalize()
 
-    # Agrupados por día y, dentro de cada día, del nivel más alto al más bajo.
+    # Agrupados por día (un aviso de varios días sale en cada uno) y, dentro
+    # de cada día, del nivel más alto al más bajo.
     por_dia = {}
     for aviso in avisos:
-        por_dia.setdefault(dia_del_aviso(aviso), []).append(aviso)
+        for dia, desde, hasta in tramos_por_dia(aviso):
+            por_dia.setdefault(dia, []).append((aviso, desde, hasta))
     lejano = datetime.max.replace(tzinfo=timezone.utc)
     items = []
     for dia in sorted(por_dia):
         items.append(f'<p class="avisos-dia">{titulo_dia(dia)}</p>')
-        del_dia = sorted(por_dia[dia], key=lambda a: (-NIVELES_AVISO[a["nivel"]], a["inicio"] or ahora, a["fin"] or lejano))
-        for aviso in del_dia:
-            inicio, fin = aviso["inicio"], aviso["fin"]
-            if inicio and inicio > ahora:
-                cuando = f"De {_momento_aviso(inicio)}"
-            else:
-                cuando = "En vigor"
-            if fin:
-                cuando += f" hasta {_momento_aviso(fin)}"
+        del_dia = sorted(por_dia[dia], key=lambda t: (-NIVELES_AVISO[t[0]["nivel"]], t[1], t[0]["fin"] or lejano))
+        for aviso, desde, hasta in del_dia:
             titulo = aviso["evento"] or aviso["titular"] or f"Aviso {aviso['nivel']}"
             descripcion = f'<p>{html.escape(aviso["descripcion"])}</p>' if aviso["descripcion"] else ""
             items.append(
                 f'<div class="aviso-meteo nivel-{aviso["nivel"]}">'
                 f'<div class="aviso-cabecera"><strong>{html.escape(titulo)}</strong>'
-                f'<span class="aviso-cuando">{cuando}</span></div>'
+                f'<span class="aviso-cuando">{cuando(aviso, dia, desde, hasta)}</span></div>'
                 f"{descripcion}</div>"
             )
     peor = max((a["nivel"] for a in avisos), key=NIVELES_AVISO.get)
