@@ -29,17 +29,13 @@ jobs:
           echo "===== CABECERAS ====="
           cat salida/js_cabeceras.txt || true
 
-      - name: Endpoints y cadenas que parecen datos
+      - name: Contenido del cargador (556 bytes)
         run: |
-          F=salida/avisos-meteo.js
-          echo "===== URLS completas (http/https) ====="
-          grep -oE "https?://[A-Za-z0-9_./:?=&%@+~#-]+" $F | sort -u | head -80 || true
-          echo "===== RUTAS que contienen api, json, aviso, alert, meteo, zona, comarca, geo ====="
-          grep -oE "[\"'\`](/[A-Za-z0-9_./{}:?=&%-]*)[\"'\`]" $F | grep -iE "api|json|aviso|alert|meteo|zona|comarca|geo|wms|storage" | sort -u | head -80 || true
-          echo "===== fetch( / XMLHttpRequest / axios / .get( con contexto ====="
-          grep -oE ".{0,120}(fetch\(|XMLHttpRequest|axios|\.open\(\"GET\").{0,200}" $F | head -30 || true
-          echo "===== palabras clave de datos con contexto ====="
-          grep -oE ".{0,100}(preemergencia|emergencia|nivel|fenomeno|fenómeno|comarca|geojson|\.json).{0,140}" $F | head -40 || true
+          echo "===== avisos-meteo.js ====="
+          cat salida/avisos-meteo.js
+          echo
+          echo "===== URLs y rutas dentro ====="
+          grep -oE "[A-Za-z0-9_./:-]+\.(js|css|json|html|mjs)" salida/avisos-meteo.js | sort -u || true
 
       - uses: actions/upload-artifact@v4
         with:
