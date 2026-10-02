@@ -1,0 +1,50 @@
+name: Inspección 112CV (prueba)
+
+# Workflow de usar y tirar: descarga la página de alertas del 112CV y muestra
+# en el log cómo está hecha (estado, cabeceras, HTML y posibles endpoints de
+# datos), para decidir cómo leerla. Solo vive en una rama de pruebas y se
+# ejecuta al hacer push a ella o a mano.
+on:
+  push:
+    branches: [avisosVLC-inspeccion-112cv]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  inspeccion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      URL: https://www.112cv.gva.es/es/alertas-metereologicos
+    steps:
+      - name: Descargar la página
+        run: |
+          mkdir -p salida
+          curl -sS -L -m 60 -A "weather-dash-inspeccion (+https://github.com/ljd285/weather-dash)" \
+            -D salida/cabeceras.txt -o salida/pagina.html -w "estado=%{http_code} tipo=%{content_type} bytes=%{size_download} url_final=%{url_effective}\n" "$URL" || echo "curl falló: $?"
+          echo "===== CABECERAS ====="
+          cat salida/cabeceras.txt || true
+
+      - name: Estructura de la página
+        run: |
+          echo "===== TÍTULO ====="
+          grep -oiE "<title>[^<]*</title>" salida/pagina.html | head -3 || true
+          echo "===== SCRIPTS (src) ====="
+          grep -oE "<script[^>]+src=\"[^\"]+\"" salida/pagina.html | head -40 || true
+          echo "===== URLS QUE PARECEN DATOS (json, api, alert, aviso, wms, geoserver) ====="
+          grep -oiE "(https?:)?//[^\"' <>)]+|/[A-Za-z0-9_./?=&%-]+" salida/pagina.html \
+            | grep -iE "json|api|alert|aviso|wms|wfs|geoserver|arcgis|feature|rest|ajax|portlet" | sort -u | head -80 || true
+          echo "===== LÍNEAS CON PALABRAS CLAVE ====="
+          grep -inE "preemergencia|pre-emergencia|emergencia|aviso|alerta|comarca|nivel" salida/pagina.html | cut -c1-300 | head -80 || true
+
+      - name: HTML (primeras líneas, sin scripts en línea muy largos)
+        run: |
+          echo "===== HTML ====="
+          cut -c1-400 salida/pagina.html | head -400 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pagina-112cv
+          path: salida/
