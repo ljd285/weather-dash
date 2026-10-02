@@ -15,7 +15,7 @@ permissions:
 jobs:
   inspeccion:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     env:
       URL: https://www.112cv.gva.es/es/alertas-metereologicos
     steps:
@@ -29,29 +29,36 @@ jobs:
           echo "===== CABECERAS ====="
           cat salida/js_cabeceras.txt || true
 
-      - name: Descargar liferay-loader.js y avisos-meteo.html
+      - name: Descargar los JSON de datos
         run: |
           UA="weather-dash-inspeccion (+https://github.com/ljd285/weather-dash)"
-          B=https://wpr.112cv.gva.es/external/api/storage/descargar
-          for u in "$B/js/static/dist/vanilla/liferay/liferay-loader.js" "$B/html/static/dist/vanilla/avisos-meteo.html" "$B/js/static/dist/vanilla/liferay-loader.js"; do
-            n=$(echo "$u" | sed 's#.*/##; s#[^A-Za-z0-9._-]#_#g')
-            curl -sS -L -m 60 -A "$UA" -o "salida/$(echo $u | md5sum | cut -c1-6)_$n" -w "$u -> estado=%{http_code} tipo=%{content_type} bytes=%{size_download}\n" "$u" || echo "falló $u"
+          B=https://wpr.112cv.gva.es/external/api/storage/descargar/json
+          for r in avisosmeteorologicos datos/fenomenos static/situacion static/zonas; do
+            n=$(echo "$r" | tr '/' '_')
+            /usr/bin/time -f "tiempo=%es" curl -sS -L -m 120 -A "$UA" -D "salida/$n.cab" -o "salida/$n.json" \
+              -w "$r -> estado=%{http_code} tipo=%{content_type} bytes=%{size_download}\n" "$B/$r" || echo "falló $r"
           done
           ls -la salida/
 
-      - name: Buscar de dónde salen los datos
+      - name: Contenido de los JSON
         run: |
-          for F in salida/*liferay-loader.js salida/*avisos-meteo.html; do
-            [ -s "$F" ] || continue
-            echo "################ $F ($(wc -c < "$F") bytes)"
-            echo "--- URLs http(s) ---"
-            grep -oE "https?://[A-Za-z0-9_./:?=&%@+~#{}$-]+" "$F" | sort -u | head -60 || true
-            echo "--- rutas /... con api|json|aviso|alert|meteo|zona|comarca|geo|wms|storage|mapas ---"
-            grep -oE "[\"'\`](/[A-Za-z0-9_./{}:?=&%$-]*)[\"'\`]" "$F" | grep -iE "api|json|aviso|alert|meteo|zona|comarca|geo|wms|storage|mapas" | sort -u | head -60 || true
-            echo "--- fetch/XHR/axios con contexto ---"
-            grep -oE ".{0,100}(fetch\(|XMLHttpRequest|axios|\.get\(|\.open\(.GET).{0,160}" "$F" | head -20 || true
-            echo "--- ficheros .js/.css/.json/.html referenciados ---"
-            grep -oE "[A-Za-z0-9_./:-]+\.(js|mjs|css|json|geojson|html)" "$F" | sort -u | head -40 || true
+          for n in avisosmeteorologicos datos_fenomenos static_situacion; do
+            echo "################ $n.json"
+            head -c 6000 "salida/$n.json" || true
+            echo
+          done
+          echo "################ static_zonas.json (primeros 2500 bytes y filas de València)"
+          head -c 2500 salida/static_zonas.json || true
+          echo
+          grep -oiE ".{0,200}(valencia|val[eè]ncia|litoral norte).{0,200}" salida/static_zonas.json | head -8 || true
+
+      - name: Cómo interpreta el widget los datos (contexto en el HTML)
+        run: |
+          H=$(ls salida/*avisos-meteo.html 2>/dev/null || true)
+          if [ -z "$H" ]; then curl -sS -L -m 120 -A "weather-dash-inspeccion" -o salida/avisos-meteo.html https://wpr.112cv.gva.es/external/api/storage/descargar/html/static/dist/vanilla/avisos-meteo.html; H=salida/avisos-meteo.html; fi
+          for k in "avisosmeteorologicos" "json/datos/fenomenos" "json/static/situacion" "json/static/zonas" "url(path)" "ID_ZONA\|ID_FENOMENO\|ID_SITUACION\|NIVEL\|FECHA"; do
+            echo "################ contexto de: $k"
+            grep -n -B6 -A14 "$k" "$H" | cut -c1-220 | head -60
           done
 
       - uses: actions/upload-artifact@v4
