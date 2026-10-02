@@ -342,6 +342,145 @@ def lluvia_por_dia(observaciones, ahora=None):
     return resultado
 
 
+DIAS_TABLA = 7
+
+
+def resumen_dias(observaciones, dias=DIAS_TABLA, ahora=None):
+    """Un registro por día natural (hora local) de los últimos `dias` días,
+    hoy incluido, con las lecturas horarias de la estación: máxima, mínima,
+    lluvia, viento medio, racha máxima y su dirección, y cuántas lecturas
+    hay. Cada lectura cuenta para el día en que empezó su hora."""
+    df = _observaciones_a_dataframe(observaciones)
+    if df.empty:
+        return []
+    for col in ("vv", "dmax"):
+        df[col] = pd.to_numeric(df[col], errors="coerce") if col in df.columns else float("nan")
+    ahora = pd.Timestamp(ahora or datetime.now(timezone.utc))
+    ahora = ahora.tz_localize("UTC") if ahora.tzinfo is None else ahora
+    hoy = ahora.tz_convert(ZONA_HORARIA).normalize().tz_localize(None)
+    df["dia"] = (df["fint"] - pd.Timedelta(minutes=30)).dt.tz_localize("UTC").dt.tz_convert(ZONA_HORARIA) \
+        .dt.normalize().dt.tz_localize(None)
+    resultado = []
+    for i in range(dias - 1, -1, -1):
+        dia = hoy - pd.Timedelta(days=i)
+        del_dia = df[df["dia"] == dia]
+        if del_dia.empty:
+            resultado.append({"fecha": dia, "lecturas": 0})
+            continue
+        maximas = del_dia["tamax"].fillna(del_dia["ta"])
+        minimas = del_dia["tamin"].fillna(del_dia["ta"])
+        fila_racha = del_dia.loc[del_dia["vmax"].idxmax()] if del_dia["vmax"].notna().any() else None
+        resultado.append({
+            "fecha": dia,
+            "lecturas": len(del_dia),
+            "tmax": maximas.max() if maximas.notna().any() else None,
+            "tmin": minimas.min() if minimas.notna().any() else None,
+            "prec": del_dia["prec"].sum() if del_dia["prec"].notna().any() else None,
+            "viento": del_dia["vv"].mean() * 3.6 if del_dia["vv"].notna().any() else None,
+            "racha": fila_racha["vmax"] * 3.6 if fila_racha is not None else None,
+            "dir_racha": _sector_viento(fila_racha["dmax"]) if fila_racha is not None else None,
+        })
+    return resultado
+
+
+def construir_tabla_ultimos_dias(observaciones, clima, ahora=None):
+    """Tabla de los últimos 7 días (sección «Ahora»): máxima y mínima con el
+    color de su percentil en su época (como el calendario de «Histórico») y
+    la diferencia con la normal, lluvia, viento medio y racha; una fila con
+    el resumen de los 7 días y una frase frente a lo normal."""
+    dias = resumen_dias(observaciones, ahora=ahora)
+    if not any(d["lecturas"] for d in dias):
+        return ""
+    ahora_local = pd.Timestamp(ahora or datetime.now(timezone.utc)).tz_convert(ZONA_HORARIA)
+    hoy = dias[-1]["fecha"]
+
+    def valor(v, decimales=1, sufijo=""):
+        return f"{_es(v, decimales)}{sufijo}" if v is not None and not pd.isna(v) else "—"
+
+    def celda_temp(d, var):
+        v = d.get(var)
+        if v is None or pd.isna(v):
+            return "<td>—</td>"
+        if d["fecha"] == hoy:
+            return f'<td><span class="chip">{_es(v)}°</span><small class="solo-escritorio">hasta ahora</small></td>'
+        comparacion = climatologia.comparar_dia(clima, var, d["fecha"], v)
+        if comparacion is None:
+            return f'<td><span class="chip">{_es(v)}°</span></td>'
+        clase = _clase(comparacion["percentil"], CLASES_PERCENTIL)
+        diferencia = v - comparacion["normal"]
+        titulo = (f"Normal {_es(comparacion['normal'])} °C · percentil {comparacion['percentil']:.0f}: "
+                  f"{CLASES_PERCENTIL[clase][1]}")
+        return (f'<td title="{titulo}"><span class="chip t{clase}">{_es(v)}°</span>'
+                f'<small>{"+" if diferencia >= 0 else ""}{_es(diferencia)}</small></td>')
+
+    def celda_lluvia(mm):
+        if mm is None or pd.isna(mm):
+            return "<td>—</td>"
+        return f'<td><span class="chip q{_clase(mm, CLASES_LLUVIA_DIA)}">{_es(mm)}</span></td>'
+
+    filas = []
+    for d in dias:
+        if d["fecha"] == hoy:
+            nombre = f"Hoy <small>hasta {ahora_local:%H} h</small>"
+        else:
+            nombre = f"{DIAS_SEMANA[d['fecha'].weekday()].capitalize()} {d['fecha'].day}"
+            if 0 < d["lecturas"] < LECTURAS_MINIMAS_DIA:
+                nombre += f' <span title="Solo {d["lecturas"]} lecturas horarias: puede faltar algún dato">*</span>'
+        if not d["lecturas"]:
+            filas.append(f'<tr><th>{nombre}</th><td colspan="5" class="sin-lecturas">sin lecturas</td></tr>')
+            continue
+        racha = valor(d.get("racha"), 0) + (f'<small>{d["dir_racha"]}</small>' if d.get("dir_racha") else "")
+        filas.append(f"<tr><th>{nombre}</th>{celda_temp(d, 'tmax')}{celda_temp(d, 'tmin')}{celda_lluvia(d.get('prec'))}"
+                     f"<td>{valor(d.get('viento'), 0)}</td><td>{racha}</td></tr>")
+
+    con_datos = [d for d in dias if d["lecturas"]]
+
+    def extremo(var, funcion):
+        valores = [d[var] for d in con_datos if d.get(var) is not None and not pd.isna(d[var])]
+        return funcion(valores) if valores else None
+
+    total = sum(d["prec"] for d in con_datos if d.get("prec") is not None and not pd.isna(d["prec"]))
+    vientos = [d["viento"] for d in con_datos if d.get("viento") is not None and not pd.isna(d["viento"])]
+    con_racha = [d for d in con_datos if d.get("racha") is not None and not pd.isna(d["racha"])]
+    racha_max = max(con_racha, key=lambda d: d["racha"]) if con_racha else None
+    medias_normales, _ = climatologia.lluvia_normal(clima, [d["fecha"] for d in dias])
+    lluvia_normal = sum(m for m in medias_normales if m is not None) if any(m is not None for m in medias_normales) else None
+    pie = (
+        f"<tr><th>7 días</th><td>{valor(extremo('tmax', max))}°</td><td>{valor(extremo('tmin', min))}°</td>"
+        f"<td>{_es(total)}" + (f"<small>normal {_es(lluvia_normal, 0)}</small>" if lluvia_normal is not None else "")
+        + f"</td><td>{valor(sum(vientos) / len(vientos) if vientos else None, 0)}</td>"
+        f"<td>{valor(racha_max['racha'] if racha_max else None, 0)}"
+        + (f"<small>{racha_max['dir_racha']}</small>" if racha_max and racha_max.get("dir_racha") else "") + "</td></tr>"
+    )
+
+    # Frase: lluvia frente a lo normal y anomalía media de las máximas (días completos).
+    frases = []
+    if lluvia_normal is not None:
+        frases.append(f"<strong>{_es(total)} mm</strong> de lluvia (lo normal para estos 7 días, unos {_es(lluvia_normal, 0)} mm)")
+    anomalias = []
+    for d in con_datos:
+        if d["fecha"] != hoy and d.get("tmax") is not None and not pd.isna(d["tmax"]):
+            comparacion = climatologia.comparar_dia(clima, "tmax", d["fecha"], d["tmax"])
+            if comparacion:
+                anomalias.append(d["tmax"] - comparacion["normal"])
+    if anomalias:
+        media = sum(anomalias) / len(anomalias)
+        frases.append(f"máximas <strong>{_es(abs(media))} °C</strong> {'por encima' if media >= 0 else 'por debajo'} "
+                      "de lo normal de media")
+    resumen = f'<p class="resumen-dias">Últimos 7 días: {" · ".join(frases)}.</p>' if frases else ""
+    return (
+        '<div class="scroll-tabla"><table class="tabla-dias">'
+        "<thead><tr><th>Día</th><th>Máx. <small>°C<span class=\"solo-escritorio\"> · vs normal</span></small></th>"
+        "<th>Mín. <small>°C<span class=\"solo-escritorio\"> · vs normal</span></small></th>"
+        "<th>Lluvia <small>mm</small></th><th>Viento <small>medio<span class=\"solo-escritorio\">, km/h</span></small></th>"
+        "<th>Racha <small>km/h</small></th></tr></thead>"
+        f"<tbody>{''.join(filas)}</tbody><tfoot>{pie}</tfoot></table></div>{resumen}"
+        '<p class="aviso">Con las lecturas horarias de la estación (días naturales, hora local; hoy, hasta la última '
+        "lectura). El color de la máxima y la mínima es el del calendario de «Histórico»: dónde queda el día entre los "
+        "de su época en 1991–2020.</p>"
+    )
+
+
 LECTURAS_MINIMAS_DIA = 20  # horas con dato necesarias para dar por bueno un día
 
 
@@ -2998,6 +3137,8 @@ def main():
         # Tres secciones, cada una con su color: lo medido ahora, la
         # predicción y el histórico. Las cabeceras dicen de dónde sale cada
         # cosa y resumen lo esencial en una línea.
+        serie = climatologia.leer_serie(idema) if idema else pd.DataFrame()
+        clima = climatologia.climatologia_diaria(serie)
         nombre_boya = (config_boya or {}).get("nombre", "la boya")
         hora_obs = hora_observacion(lectura_actual)
         fuente_ahora = "Medido por la estación de AEMET" + (
@@ -3014,6 +3155,11 @@ def main():
             seccion.append('</div><p class="aviso">Datos de Puertos del Estado (red de boyas de aguas profundas). '
                            'La boya está mar adentro: su temperatura es la del mar abierto, no la de la orilla. '
                            'El oleaje indica de dónde viene (p. ej. «del NE»).</p></details>')
+        tabla_7_dias = construir_tabla_ultimos_dias(observaciones, clima)
+        if tabla_7_dias:
+            seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Últimos 7 días</summary>')
+            seccion.append(tabla_7_dias)
+            seccion.append('</details>')
         seccion.append(CIERRE_SECCION)
 
         seccion.append(f'<section class="seccion seccion-pronostico" data-seccion="pronostico" id="{slug}-pronostico">')
@@ -3042,8 +3188,6 @@ def main():
         df_provisional = pd.DataFrame()
         if not df_hist_completo.empty:
             df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
-        serie = climatologia.leer_serie(idema) if idema else pd.DataFrame()
-        clima = climatologia.climatologia_diaria(serie)
         normales_umbral = {(v, u): climatologia.dias_por_anio(serie, v, u) for v, u, _ in UMBRALES_CALENDARIO}
         calendario = construir_calendario(datos_calendario(df_hist_completo, df_provisional), clima,
                                           extremos, normales_umbral)

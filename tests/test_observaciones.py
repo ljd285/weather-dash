@@ -85,3 +85,28 @@ def test_tarjeta_de_lluvia_con_el_acumulado_de_hoy():
     html = f.construir_tarjetas_kpi(obs[-1], observaciones=obs)
     assert "<h3>Lluvia hoy</h3>" in html and "última hora 2,4 mm" in html and "ayer 0,0 mm" in html
     assert "<h3>Lluvia (última hora)</h3>" in f.construir_tarjetas_kpi({"prec": 0.0})  # sin lecturas horarias
+
+
+def test_tabla_de_los_ultimos_7_dias():
+    from test_climatologia import serie_sintetica
+
+    import climatologia
+
+    clima = climatologia.climatologia_diaria(serie_sintetica())
+    ahora = datetime(2026, 7, 20, 10, 30, tzinfo=timezone.utc)  # 12:30 hora local
+    obs = []
+    for h in range(9 * 24, -1, -1):  # lecturas horarias de los últimos 9 días
+        t = ahora.replace(minute=0) - timedelta(hours=h)
+        obs.append({"fint": t.strftime("%Y-%m-%dT%H:%M:%S+0000"), "ta": 25.0 + (h % 24) / 4, "prec": 0.0,
+                    "vv": 3.0, "vmax": 8.0, "dmax": 90.0})
+    obs[-30]["prec"] = 12.0  # ayer
+    obs[-30]["vmax"] = 20.0  # racha de 72 km/h
+    dias = f.resumen_dias(obs, ahora=ahora)
+    assert len(dias) == 7 and dias[-1]["fecha"] == pd.Timestamp("2026-07-20") and dias[0]["lecturas"] == 24
+    html = f.construir_tabla_ultimos_dias(obs, clima, ahora=ahora)
+    assert "Hoy <small>hasta 12 h</small>" in html and html.count("hasta ahora") == 2
+    assert '<span class="chip q3">12,0</span>' in html  # 12 mm: clase 5-15 mm
+    assert "<td>72<small>E</small></td>" in html  # racha máxima de los 7 días, con su dirección
+    assert "<th>7 días</th>" in html and "Últimos 7 días: <strong>12,0 mm</strong>" in html
+    assert 'class="chip t' in html and "vs normal" in html
+    assert f.construir_tabla_ultimos_dias([], clima) == ""
