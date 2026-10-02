@@ -29,13 +29,30 @@ jobs:
           echo "===== CABECERAS ====="
           cat salida/js_cabeceras.txt || true
 
-      - name: Contenido del cargador (556 bytes)
+      - name: Descargar liferay-loader.js y avisos-meteo.html
         run: |
-          echo "===== avisos-meteo.js ====="
-          cat salida/avisos-meteo.js
-          echo
-          echo "===== URLs y rutas dentro ====="
-          grep -oE "[A-Za-z0-9_./:-]+\.(js|css|json|html|mjs)" salida/avisos-meteo.js | sort -u || true
+          UA="weather-dash-inspeccion (+https://github.com/ljd285/weather-dash)"
+          B=https://wpr.112cv.gva.es/external/api/storage/descargar
+          for u in "$B/js/static/dist/vanilla/liferay/liferay-loader.js" "$B/html/static/dist/vanilla/avisos-meteo.html" "$B/js/static/dist/vanilla/liferay-loader.js"; do
+            n=$(echo "$u" | sed 's#.*/##; s#[^A-Za-z0-9._-]#_#g')
+            curl -sS -L -m 60 -A "$UA" -o "salida/$(echo $u | md5sum | cut -c1-6)_$n" -w "$u -> estado=%{http_code} tipo=%{content_type} bytes=%{size_download}\n" "$u" || echo "falló $u"
+          done
+          ls -la salida/
+
+      - name: Buscar de dónde salen los datos
+        run: |
+          for F in salida/*liferay-loader.js salida/*avisos-meteo.html; do
+            [ -s "$F" ] || continue
+            echo "################ $F ($(wc -c < "$F") bytes)"
+            echo "--- URLs http(s) ---"
+            grep -oE "https?://[A-Za-z0-9_./:?=&%@+~#{}$-]+" "$F" | sort -u | head -60 || true
+            echo "--- rutas /... con api|json|aviso|alert|meteo|zona|comarca|geo|wms|storage|mapas ---"
+            grep -oE "[\"'\`](/[A-Za-z0-9_./{}:?=&%$-]*)[\"'\`]" "$F" | grep -iE "api|json|aviso|alert|meteo|zona|comarca|geo|wms|storage|mapas" | sort -u | head -60 || true
+            echo "--- fetch/XHR/axios con contexto ---"
+            grep -oE ".{0,100}(fetch\(|XMLHttpRequest|axios|\.get\(|\.open\(.GET).{0,160}" "$F" | head -20 || true
+            echo "--- ficheros .js/.css/.json/.html referenciados ---"
+            grep -oE "[A-Za-z0-9_./:-]+\.(js|mjs|css|json|geojson|html)" "$F" | sort -u | head -40 || true
+          done
 
       - uses: actions/upload-artifact@v4
         with:
