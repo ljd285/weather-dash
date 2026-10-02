@@ -19,32 +19,29 @@ jobs:
     env:
       URL: https://www.112cv.gva.es/es/alertas-metereologicos
     steps:
-      - name: Descargar la página
+      - name: Descargar el widget de avisos (JavaScript)
+        env:
+          JS: https://wpr.112cv.gva.es/external/api/storage/descargar/js/static/dist/vanilla/liferay/avisos-meteo.js
         run: |
           mkdir -p salida
           curl -sS -L -m 60 -A "weather-dash-inspeccion (+https://github.com/ljd285/weather-dash)" \
-            -D salida/cabeceras.txt -o salida/pagina.html -w "estado=%{http_code} tipo=%{content_type} bytes=%{size_download} url_final=%{url_effective}\n" "$URL" || echo "curl falló: $?"
+            -D salida/js_cabeceras.txt -o salida/avisos-meteo.js -w "estado=%{http_code} tipo=%{content_type} bytes=%{size_download}\n" "$JS" || echo "curl falló: $?"
           echo "===== CABECERAS ====="
-          cat salida/cabeceras.txt || true
+          cat salida/js_cabeceras.txt || true
 
-      - name: Estructura de la página
+      - name: Endpoints y cadenas que parecen datos
         run: |
-          echo "===== TÍTULO ====="
-          grep -oiE "<title>[^<]*</title>" salida/pagina.html | head -3 || true
-          echo "===== SCRIPTS (src) ====="
-          grep -oE "<script[^>]+src=\"[^\"]+\"" salida/pagina.html | head -40 || true
-          echo "===== URLS QUE PARECEN DATOS (json, api, alert, aviso, wms, geoserver) ====="
-          grep -oiE "(https?:)?//[^\"' <>)]+|/[A-Za-z0-9_./?=&%-]+" salida/pagina.html \
-            | grep -iE "json|api|alert|aviso|wms|wfs|geoserver|arcgis|feature|rest|ajax|portlet" | sort -u | head -80 || true
-          echo "===== LÍNEAS CON PALABRAS CLAVE ====="
-          grep -inE "preemergencia|pre-emergencia|emergencia|aviso|alerta|comarca|nivel" salida/pagina.html | cut -c1-300 | head -80 || true
-
-      - name: HTML (primeras líneas, sin scripts en línea muy largos)
-        run: |
-          echo "===== HTML ====="
-          cut -c1-400 salida/pagina.html | head -400 || true
+          F=salida/avisos-meteo.js
+          echo "===== URLS completas (http/https) ====="
+          grep -oE "https?://[A-Za-z0-9_./:?=&%@+~#-]+" $F | sort -u | head -80 || true
+          echo "===== RUTAS que contienen api, json, aviso, alert, meteo, zona, comarca, geo ====="
+          grep -oE "[\"'\`](/[A-Za-z0-9_./{}:?=&%-]*)[\"'\`]" $F | grep -iE "api|json|aviso|alert|meteo|zona|comarca|geo|wms|storage" | sort -u | head -80 || true
+          echo "===== fetch( / XMLHttpRequest / axios / .get( con contexto ====="
+          grep -oE ".{0,120}(fetch\(|XMLHttpRequest|axios|\.open\(\"GET\").{0,200}" $F | head -30 || true
+          echo "===== palabras clave de datos con contexto ====="
+          grep -oE ".{0,100}(preemergencia|emergencia|nivel|fenomeno|fenómeno|comarca|geojson|\.json).{0,140}" $F | head -40 || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pagina-112cv
+          name: js-112cv
           path: salida/
