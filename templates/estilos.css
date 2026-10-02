@@ -288,3 +288,35 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
 .cal-leyenda-item { display: inline-flex; align-items: center; gap: 0.3rem; }
 .cal-leyenda .cal-dia { width: 0.85rem; cursor: default; }
 .cal-detalle { min-height: 1.3em; margin: 0.5rem 0 0.25rem; font-size: 0.9rem; font-weight: 500; }
+/* Tabla de los últimos 7 días (sección «Ahora»). */
+.scroll-tabla { overflow-x: auto; }
+.tabla-dias {
+    width: 100%; border-collapse: collapse; background: var(--superficie); border-radius: 8px; overflow: hidden;
+    box-shadow: 0 1px 3px var(--sombra); font-size: 0.92rem; font-variant-numeric: tabular-nums;
+}
+.tabla-dias th, .tabla-dias td { padding: 0.45rem 0.6rem; text-align: right; border-bottom: 1px solid var(--borde); white-space: nowrap; vertical-align: middle; }
+.tabla-dias th:first-child { text-align: left; font-weight: 500; }
+.tabla-dias thead th { font-size: 0.78rem; color: var(--texto-secundario); font-weight: 500; vertical-align: bottom; }
+.tabla-dias small { display: block; font-size: 0.72rem; color: var(--texto-secundario); font-weight: 400; }
+.tabla-dias tbody th small { display: inline; }
+.tabla-dias tfoot th, .tabla-dias tfoot td { font-weight: 700; border-bottom: 0; }
+.tabla-dias .sin-lecturas { text-align: center; color: var(--texto-secundario); font-style: italic; }
+.chip { display: inline-block; min-width: 3.2em; padding: 0.1rem 0.4rem; border-radius: 4px; text-align: center; font-weight: 500; }
+.chip.t0 { background: var(--t0); } .chip.t1 { background: var(--t1); } .chip.t2 { background: var(--t2); }
+.chip.t3 { background: var(--t3); } .chip.t4 { background: var(--t4); } .chip.t5 { background: var(--t5); }
+.chip.t6 { background: var(--t6); }
+.chip.q0 { background: var(--q0); } .chip.q1 { background: var(--q1); } .chip.q2 { background: var(--q2); }
+.chip.q3 { background: var(--q3); } .chip.q4 { background: var(--q4); } .chip.q5 { background: var(--q5); }
+.chip.t0, .chip.t1, .chip.t5, .chip.t6, .chip.q3, .chip.q4, .chip.q5 { color: #FFFFFF; }
+:root[data-theme="dark"] .chip.t0, :root[data-theme="dark"] .chip.t6,
+:root[data-theme="dark"] .chip.q4, :root[data-theme="dark"] .chip.q5 { color: #111111; }
+.resumen-dias { margin: 0.5rem 0 0.25rem; font-size: 0.92rem; }
+@media (max-width: 640px) {
+    .tabla-dias { font-size: 0.78rem; }
+    .tabla-dias th, .tabla-dias td { padding: 0.4rem 0.2rem; }
+    .tabla-dias th:first-child { padding-left: 0.4rem; }
+    .tabla-dias td:last-child { padding-right: 0.4rem; }
+    .tabla-dias thead small, .tabla-dias tbody th small { display: block; }
+    .tabla-dias .solo-escritorio { display: none; }
+    .chip { min-width: 2.6em; padding: 0.1rem 0.2rem; }
+}
