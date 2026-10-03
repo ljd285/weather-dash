@@ -3147,6 +3147,11 @@ def main():
         seccion.append(cabecera_seccion("Ahora", fuente_ahora, sello=f"Observado a las {hora_obs}" if hora_obs else ""))
         seccion.append(construir_tarjetas_kpi(lectura_actual, mar, observaciones, resumen, nombre_boya)
                        or '<p class="aviso">No hay observaciones disponibles en esta actualización.</p>')
+        tabla_7_dias = construir_tabla_ultimos_dias(observaciones, clima)
+        if tabla_7_dias:
+            seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Últimos 7 días</summary>')
+            seccion.append(tabla_7_dias)
+            seccion.append('</details>')
         graficos_boya = construir_graficos_boya(df_boya, nombre_boya)
         if graficos_boya:
             seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Evolución del mar '
@@ -3155,11 +3160,6 @@ def main():
             seccion.append('</div><p class="aviso">Datos de Puertos del Estado (red de boyas de aguas profundas). '
                            'La boya está mar adentro: su temperatura es la del mar abierto, no la de la orilla. '
                            'El oleaje indica de dónde viene (p. ej. «del NE»).</p></details>')
-        tabla_7_dias = construir_tabla_ultimos_dias(observaciones, clima)
-        if tabla_7_dias:
-            seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Últimos 7 días</summary>')
-            seccion.append(tabla_7_dias)
-            seccion.append('</details>')
         seccion.append(CIERRE_SECCION)
 
         seccion.append(f'<section class="seccion seccion-pronostico" data-seccion="pronostico" id="{slug}-pronostico">')
