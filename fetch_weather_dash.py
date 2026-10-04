@@ -1687,19 +1687,54 @@ ESCALA_TEMPERATURA = [
 ]
 
 
-def color_temperatura(t):
-    """Color de la escala de temperatura, interpolando entre sus puntos."""
-    if t <= ESCALA_TEMPERATURA[0][0]:
-        r, g, b = ESCALA_TEMPERATURA[0][1]
-    elif t >= ESCALA_TEMPERATURA[-1][0]:
-        r, g, b = ESCALA_TEMPERATURA[-1][1]
+#: Escala de color del viento (km/h, color): de verde claro (flojo) a
+#: verde oscuro y marrón (fuerte). Igual que la de temperatura, solo
+#: acompaña a los números: la barra de viento de cada día.
+ESCALA_VIENTO = [
+    (0, (217, 240, 163)), (20, (120, 198, 121)), (40, (35, 132, 67)), (60, (140, 81, 10)), (80, (84, 48, 5)),
+]
+#: Velocidad (km/h) que llena la barra de viento, salvo que la semana traiga más.
+TOPE_BARRA_VIENTO = 60
+
+
+def _color_escala(escala, v):
+    """Color de una escala [(valor, (r, g, b)), ...], interpolando entre sus puntos."""
+    if v <= escala[0][0]:
+        r, g, b = escala[0][1]
+    elif v >= escala[-1][0]:
+        r, g, b = escala[-1][1]
     else:
-        for (t0, c0), (t1, c1) in pairwise(ESCALA_TEMPERATURA):
-            if t0 <= t <= t1:
-                k = (t - t0) / (t1 - t0)
+        for (v0, c0), (v1, c1) in pairwise(escala):
+            if v0 <= v <= v1:
+                k = (v - v0) / (v1 - v0)
                 r, g, b = (round(a + (z - a) * k) for a, z in zip(c0, c1, strict=True))
                 break
     return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def color_temperatura(t):
+    """Color de la escala de temperatura, interpolando entre sus puntos."""
+    return _color_escala(ESCALA_TEMPERATURA, t)
+
+
+def color_viento(v):
+    """Color de la escala de viento, interpolando entre sus puntos."""
+    return _color_escala(ESCALA_VIENTO, v)
+
+
+def _barra_viento(medio, racha, tope):
+    """Barra del viento de un día, de 0 a `tope` km/h: desde el viento
+    medio hasta la racha máxima (o solo una marca en el medio si AEMET no
+    da racha), con el color de la escala de viento."""
+    if medio is None or pd.isna(medio):
+        return ""
+    fuerte = racha if racha is not None and pd.notna(racha) and racha > medio else medio
+    izquierda = min(100 * medio / tope, 96)
+    ancho = max(100 * (fuerte - medio) / tope, 4)
+    return (
+        f'<div class="rango-semana rango-viento" aria-hidden="true"><span style="left:{izquierda:.0f}%;width:{ancho:.0f}%;'
+        f'background:linear-gradient(90deg,{color_viento(medio)},{color_viento(fuerte)});"></span></div>'
+    )
 
 
 #: Etiqueta corta de cada récord para las tarjetas de la predicción.
@@ -1720,6 +1755,9 @@ def construir_tarjetas_pronostico(df, extremos=None):
     # Rango de toda la semana, para situar la barra de cada día dentro de él.
     semana_min, semana_max = df["tmin"].min(), df["tmax"].max()
     amplitud = max((semana_max - semana_min) if pd.notna(semana_max) and pd.notna(semana_min) else 0, 1)
+    # La barra de viento va de 0 a TOPE_BARRA_VIENTO km/h (o a la racha más fuerte de la semana).
+    vientos = [df[c].max() for c in ("viento_max", "racha_max") if c in df.columns]
+    tope_viento = max([TOPE_BARRA_VIENTO, *(v for v in vientos if pd.notna(v))])
     tarjetas = []
     for fila in df.itertuples():
         dias = (fila.fecha - hoy).days
@@ -1740,10 +1778,17 @@ def construir_tarjetas_pronostico(df, extremos=None):
             )
         lluvia = (f'<span aria-hidden="true">💧</span><span class="solo-lector">Probabilidad de lluvia:</span> {fila.prob_precip:.0f} %'
                   if pd.notna(fila.prob_precip) else "")
-        viento = ""
-        if pd.notna(getattr(fila, "viento_max", None)):
+        viento = barra_viento = ""
+        medio, racha = getattr(fila, "viento_max", None), getattr(fila, "racha_max", None)
+        if pd.notna(medio):
             direccion = getattr(fila, "viento_dir", None)
-            viento = f'<span aria-hidden="true">💨</span><span class="solo-lector">Viento:</span> {fila.viento_max:.0f} km/h' + (f" {html.escape(str(direccion))}" if direccion and direccion != "C" else "")
+            if racha is not None and pd.notna(racha) and racha > medio:
+                cifras = (f'<span class="solo-lector">Viento medio y racha máxima:</span> '
+                          f'{medio:.0f}–{racha:.0f} km/h')
+            else:
+                cifras = f'<span class="solo-lector">Viento:</span> {medio:.0f} km/h'
+            viento = f'<span aria-hidden="true">💨</span>{cifras}' + (f" {html.escape(str(direccion))}" if direccion and direccion != "C" else "")
+            barra_viento = _barra_viento(medio, racha, tope_viento)
         etiquetas = "".join(
             f'<span class="etiqueta-record record-{resultado}" title="{html.escape(texto)}">'
             f'{"🏆 Récord" if resultado == "supera" else "Casi récord"} {ETIQUETAS_RECORD[clave]}'
@@ -1759,6 +1804,7 @@ def construir_tarjetas_pronostico(df, extremos=None):
             f"{barra}"
             f'<p class="dia-detalle">{lluvia}</p>'
             f'<p class="dia-detalle">{viento}</p>'
+            f"{barra_viento}"
             + (f'<p class="dia-records">{etiquetas}</p>' if etiquetas else "")
             + "</div>"
         )

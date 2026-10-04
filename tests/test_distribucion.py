@@ -51,3 +51,15 @@ def test_tarjetas_ahora_agrupadas_en_aire_y_mar():
     assert html.index("grupo-aire") < html.index("grupo-mar")
     assert "Temperatura del agua" in html
     assert "grupo-mar" not in f.construir_tarjetas_kpi({"ta": 25.0, "hr": 60})
+
+
+def test_barra_de_viento_en_la_prediccion():
+    df = _prediccion([0, 0, 0])
+    df["viento_max"] = [10, 30, None]
+    df["racha_max"] = [None, 75, None]
+    html = f.construir_tarjetas_pronostico(df)
+    assert html.count("rango-viento") == 2  # el día sin viento no lleva barra
+    assert "10 km/h" in html and "30–75 km/h" in html
+    # Escala de 0 a 75 (la racha más fuerte): el día 2 empieza en el 40 % y llega al final.
+    assert "left:40%;width:60%" in html
+    assert f.color_viento(0) == "#D9F0A3" and f.color_viento(100) == "#543005"
