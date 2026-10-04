@@ -225,7 +225,7 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
     .valor-kpi { font-size: 1.4rem; }
     .mapa-estaciones { height: 200px; }
     .dias-pronostico { grid-template-columns: 1fr; gap: 0.35rem; }
-    .dia-pronostico { display: grid; grid-template-columns: 4.5rem 2.2rem 1fr auto; grid-template-areas: "nombre icono cielo temps" "nombre icono detalle detalle2" "nombre icono rango rango" "nombre icono records records"; align-items: center; text-align: left; column-gap: 0.5rem; padding: 0.4rem 0.7rem; }
+    .dia-pronostico { display: grid; grid-template-columns: 4.5rem 2.2rem 1fr auto; grid-template-areas: "nombre icono cielo temps" "nombre icono detalle detalle2" "nombre icono rango rango" "nombre icono rangov rangov" "nombre icono records records"; align-items: center; text-align: left; column-gap: 0.5rem; padding: 0.4rem 0.7rem; }
     .dia-nombre { grid-area: nombre; }
     .dia-icono { grid-area: icono; font-size: 1.6rem; }
     .dia-cielo { grid-area: cielo; min-height: 0; }
@@ -233,6 +233,7 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
     .dia-detalle:nth-of-type(5) { grid-area: detalle; }
     .dia-detalle:nth-of-type(6) { grid-area: detalle2; text-align: right; }
     .rango-semana { grid-area: rango; margin: 0.3rem 0 0.1rem; }
+    .rango-viento { grid-area: rangov; }
     .dia-records { grid-area: records; justify-content: flex-start; }
 }
 @media (max-width: 900px) {
