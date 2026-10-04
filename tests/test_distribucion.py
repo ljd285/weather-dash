@@ -60,6 +60,7 @@ def test_barra_de_viento_en_la_prediccion():
     html = f.construir_tarjetas_pronostico(df)
     assert html.count("rango-viento") == 2  # el día sin viento no lleva barra
     assert "10 km/h" in html and "30–75 km/h" in html
-    # Escala de 0 a 75 (la racha más fuerte): el día 2 empieza en el 40 % y llega al final.
-    assert "left:40%;width:60%" in html
+    # Escala de 0 a 75 (la racha más fuerte): se llena desde 0 hasta lo más alto previsto.
+    assert "left:0%;width:100%" in html  # racha de 75
+    assert "left:0%;width:13%" in html  # sin racha: hasta el viento medio (10)
     assert f.color_viento(0) == "#D9F0A3" and f.color_viento(100) == "#543005"

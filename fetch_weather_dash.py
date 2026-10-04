@@ -1723,17 +1723,16 @@ def color_viento(v):
 
 
 def _barra_viento(medio, racha, tope):
-    """Barra del viento de un día, de 0 a `tope` km/h: desde el viento
-    medio hasta la racha máxima (o solo una marca en el medio si AEMET no
-    da racha), con el color de la escala de viento."""
+    """Barra del viento de un día, en una escala de 0 a `tope` km/h: se
+    llena desde 0 hasta el valor más alto previsto (la racha máxima o, si
+    AEMET no la da, el viento medio), con el color de la escala de viento."""
     if medio is None or pd.isna(medio):
         return ""
     fuerte = racha if racha is not None and pd.notna(racha) and racha > medio else medio
-    izquierda = min(100 * medio / tope, 96)
-    ancho = max(100 * (fuerte - medio) / tope, 4)
+    ancho = min(max(100 * fuerte / tope, 4), 100)
     return (
-        f'<div class="rango-semana rango-viento" aria-hidden="true"><span style="left:{izquierda:.0f}%;width:{ancho:.0f}%;'
-        f'background:linear-gradient(90deg,{color_viento(medio)},{color_viento(fuerte)});"></span></div>'
+        f'<div class="rango-semana rango-viento" aria-hidden="true"><span style="left:0%;width:{ancho:.0f}%;'
+        f'background:linear-gradient(90deg,{color_viento(0)},{color_viento(fuerte)});"></span></div>'
     )
 
 
