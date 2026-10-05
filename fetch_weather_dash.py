@@ -1905,8 +1905,8 @@ def construir_tarjetas_pronostico(df, extremos=None):
 
 
 ETIQUETAS_ACUERDO = {"si": "Coinciden", "algo": "Alguna duda", "dudas": "Hay dudas"}
-#: Color de cada modelo en el gráfico de abanico (AEMET, en el azul de la sección).
-COLORES_MODELOS = {"AEMET": "#1E63C4", "ECMWF": "#F57C00", "ICON": "#E8B500", "Météo-France": "#D32F2F", "GFS": "#2E9E44"}
+#: Color de cada fuente en «Comparar modelos» y «¿Cuánto aciertan?».
+COLORES_MODELOS = {"AEMET": "#F57C00", "ECMWF": "#1E63C4", "ICON": "#E8B500", "Météo-France": "#D32F2F", "GFS": "#2E9E44"}
 
 
 def _nombre_dia_corto(fecha, hoy):
