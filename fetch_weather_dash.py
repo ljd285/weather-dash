@@ -775,19 +775,31 @@ MODELOS = [
 VARIABLES_MODELOS = {"temperature_2m_max": "tmax", "temperature_2m_min": "tmin", "precipitation_sum": "prec"}
 #: Lluvia (mm) a partir de la que se considera que un modelo «da lluvia».
 LLUVIA_MODELO = 1
+#: Separación entre modelos (°C) a partir de la que hay «alguna duda» y
+#: «dudas». La mínima pide más: depende mucho de lo cerca del mar o de la
+#: ciudad que caiga el punto de cada modelo, y varía más entre ellos.
+SEPARACION_DUDA = {"tmax": (3, 5), "tmin": (5, 7)}
 
 
 def obtener_modelos(lat, lon, dias=7):
     """Predicción diaria (máxima, mínima, lluvia) de cada modelo de MODELOS
     para un punto, en una sola petición a Open-Meteo (gratuito, sin clave).
-    Devuelve la respuesta tal cual."""
-    resp = requests.get(URL_MODELOS, params={
+    Devuelve la respuesta tal cual. Si no responde a tiempo, lo reintenta
+    una vez."""
+    parametros = {
         "latitude": lat, "longitude": lon, "daily": ",".join(VARIABLES_MODELOS),
         "models": ",".join(codigo for codigo, _, _ in MODELOS),
         "forecast_days": dias, "timezone": "Europe/Madrid",
-    }, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    }
+    for intento in range(2):
+        try:
+            resp = requests.get(URL_MODELOS, params=parametros, timeout=45)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException:
+            if intento == 1:
+                raise
+            time.sleep(5)
 
 
 def modelos_a_dataframe(crudo):
@@ -824,11 +836,13 @@ def acuerdo_modelos(df_pred, df_modelos):
         minimas = [v for v in [fila.tmin, *del_dia["tmin"]] if pd.notna(v)]
         lluvias = [v for v in del_dia["prec"] if pd.notna(v)]
         con_lluvia = [v for v in lluvias if v >= LLUVIA_MODELO]
-        separacion = max((max(v) - min(v)) for v in (maximas, minimas) if v) if maximas or minimas else 0
+        separaciones = {"tmax": max(maximas) - min(maximas) if maximas else 0,
+                        "tmin": max(minimas) - min(minimas) if minimas else 0}
         lluvia_dividida = 0 < len(con_lluvia) < len(lluvias)
-        if separacion >= 5 or (lluvia_dividida and max(con_lluvia) >= 5):
+        if (any(separaciones[v] >= SEPARACION_DUDA[v][1] for v in separaciones)
+                or (lluvia_dividida and max(con_lluvia) >= 5)):
             nivel = "dudas"
-        elif separacion >= 3 or lluvia_dividida:
+        elif any(separaciones[v] >= SEPARACION_DUDA[v][0] for v in separaciones) or lluvia_dividida:
             nivel = "algo"
         else:
             nivel = "si"
@@ -1928,10 +1942,11 @@ def resumen_modelos(acuerdo, hoy=None):
             continue
         detalles = []
         for clave, palabra in (("tmax", "máxima"), ("tmin", "mínima")):
-            if d[clave] and d[clave][1] - d[clave][0] >= 3:
+            if d[clave] and d[clave][1] - d[clave][0] >= SEPARACION_DUDA[clave][0]:
                 detalles.append(f"{palabra} entre {d[clave][0]:.0f}° y {d[clave][1]:.0f}°")
         if 0 < len(d["con_lluvia"]) < d["modelos_lluvia"]:
-            detalles.append(f"{len(d['con_lluvia'])} de {d['modelos_lluvia']} modelos dan lluvia ({_rango_mm(d['con_lluvia'])})")
+            n = len(d["con_lluvia"])
+            detalles.append(f"{n} de {d['modelos_lluvia']} modelos {'da' if n == 1 else 'dan'} lluvia ({_rango_mm(d['con_lluvia'])})")
         texto = f"{ETIQUETAS_ACUERDO[d['nivel']]} {_nombre_dia(d['fecha'], hoy)}"
         frases.append(f"{texto}: {'; '.join(detalles)}." if detalles else f"{texto}.")
     return " ".join(frases)
@@ -3476,9 +3491,10 @@ def main():
             seccion.append('<div class="graficos-apilados">')
             seccion.extend(construir_graficos_modelos(df_pred, df_modelos))
             seccion.append('</div><p class="aviso">Predicción de AEMET y de los modelos de otros servicios meteorológicos '
-                           'públicos (vía Open-Meteo) para el punto de la estación. Coinciden: las temperaturas no se separan '
-                           'más de 2°; alguna duda: 3–4° o solo algunos modelos dan lluvia; hay dudas: 5° o más, o lluvia de '
-                           '5 mm o más que no dan todos. La franja sombreada va del modelo más alto al más bajo.</p></details>')
+                           'públicos (vía Open-Meteo) para el punto de la estación. Coinciden: las máximas no se separan '
+                           'más de 2° ni las mínimas más de 4°; alguna duda: máximas a 3–4°, mínimas a 5–6° o solo algunos '
+                           'modelos dan lluvia; hay dudas: más separación, o lluvia de 5 mm o más que no dan todos. '
+                           'La franja sombreada va del modelo más alto al más bajo.</p></details>')
         seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Gráficos de los 7 días</summary>')
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_prediccion(df_pred))

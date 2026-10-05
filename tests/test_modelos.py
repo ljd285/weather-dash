@@ -60,3 +60,40 @@ def test_tabla_y_graficos_de_modelos():
     assert "70 %" in html and '<span class="chip q3">12 mm</span>' in html and "&lt; 1 mm" in html
     assert html.count("acuerdo-si") == 2 and html.count("acuerdo-dudas") == 1
     assert len(f.construir_graficos_modelos(_aemet(), df_modelos)) == 2
+
+
+def test_la_minima_pide_mas_separacion_y_concordancia():
+    df = f.modelos_a_dataframe(_crudo())
+    aemet = _aemet()
+    aemet.loc[0, "tmin"] = 15  # mínimas de 15 a 20 el lunes: 5° → alguna duda (en la máxima serían dudas)
+    acuerdo = f.acuerdo_modelos(aemet, df)
+    assert acuerdo[0]["nivel"] == "algo"
+    assert "Alguna duda hoy: mínima entre 15° y 20°." in f.resumen_modelos(acuerdo, HOY)
+    # Un solo modelo con lluvia: «da», no «dan».
+    crudo = _crudo()
+    for codigo in ("icon_seamless", "meteofrance_seamless"):
+        crudo["daily"][f"precipitation_sum_{codigo}"] = [0, 0, 0]
+    texto = f.resumen_modelos(f.acuerdo_modelos(_aemet(), f.modelos_a_dataframe(crudo)), HOY)
+    assert "1 de 4 modelos da lluvia (12 mm)" in texto
+
+
+def test_reintenta_si_open_meteo_no_responde(monkeypatch):
+    llamadas = []
+
+    class Respuesta:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"daily": {}}
+
+    def get(url, params, timeout):
+        llamadas.append(url)
+        if len(llamadas) == 1:
+            raise f.requests.exceptions.ReadTimeout("lento")
+        return Respuesta()
+
+    monkeypatch.setattr(f.requests, "get", get)
+    monkeypatch.setattr(f.time, "sleep", lambda s: None)
+    assert f.obtener_modelos(39.48, -0.37) == {"daily": {}}
+    assert len(llamadas) == 2
