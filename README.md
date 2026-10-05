@@ -12,7 +12,7 @@ Cada sección dice de dónde salen sus datos y resume lo esencial en una línea 
 
 - **Avisos**: avisos meteorológicos de AEMET (Meteoalerta) en vigor o próximos para la zona de la estación.
 - **Ahora**: última observación de la estación (temperatura, viento, humedad, precipitación), agrupada en «Aire» y «Mar».
-- **Predicción**: temperatura, probabilidad de precipitación, viento y humedad a 7 días.
+- **Predicción**: tarjetas de los 7 días con cielo, máxima y mínima, probabilidad de lluvia y viento.
 - **Histórico**: temperatura (sobre la banda de valores normales), precipitación, viento y humedad de los últimos 90 días.
 - **Comparación con lo normal**: el último mes completo frente a los valores normales de la estación (el periodo de referencia se lee de los metadatos de AEMET), clasificado como hace AEMET (frío/normal/cálido, seco/normal/húmedo…).
 - **Días señalados** del último mes completo (días de calor, noches tropicales y tórridas, días de lluvia, rachas fuertes…) junto a lo normal.
@@ -21,7 +21,7 @@ Cada sección dice de dónde salen sus datos y resume lo esencial en una línea 
 - **Año hidrológico**: lluvia acumulada desde el 1 de octubre frente a la acumulada normal a la misma fecha.
 - **Lluvia intensa**: intensidad máxima diaria (mm/h) con los umbrales de AEMET de lluvia fuerte, muy fuerte y torrencial.
 - **Presión y horas de sol**: evolución diaria frente a sus valores normales.
-- **Confort**: sensación térmica y punto de rocío en la observación actual, sensación térmica e índice UV (categorías de la OMS) en la predicción.
+- **Confort**: sensación térmica y punto de rocío en la observación actual, y sensación térmica en las próximas 48 horas.
 - **Comparar modelos**: la predicción de AEMET junto a la de los modelos de otros servicios meteorológicos públicos (ECMWF, ICON del DWD alemán, Météo-France y GFS de la NOAA), descargados de Open-Meteo (gratis, sin clave) para el punto de la estación. Una frase dice qué días coinciden y en qué difieren los demás; una tabla da la máxima, la mínima y la lluvia de cada modelo con una etiqueta de acuerdo por día (coinciden / alguna duda / hay dudas); y un gráfico de abanico sombrea la franja entre el modelo más alto y el más bajo, con la lluvia de cada uno debajo.
 - **¿Cuánto aciertan?**: cada día se guarda lo que prevén AEMET y los modelos para los 6 días siguientes (`data/previsiones_<idema>.csv`, la primera previsión de cada día) y se compara con lo que mide la estación. Un resumen de los últimos 30 días da, para la previsión hecha 1, 3 o 5 días antes, el error medio de la máxima y la mínima (y si tiende a pasarse o quedarse corta), el % de aciertos de lluvia sí/no (AEMET «dice sí» con ≥ 50 % de probabilidad; los modelos, con ≥ 1 mm; llovió = ≥ 1 mm) y cómo crece el error con la antelación; y la última semana, día a día, con la previsión de la víspera. Empieza a contar el día en que se activa.
 - **Próximas 48 horas**: temperatura y sensación, precipitación, probabilidad de lluvia y de tormenta, y viento hora a hora, con la noche sombreada.

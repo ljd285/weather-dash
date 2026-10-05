@@ -160,9 +160,6 @@ h2 { font-size: 1.3rem; font-weight: 500; }
 .solo-lector { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* Foco visible al navegar con el teclado. */
 a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--md-azul); outline-offset: 2px; border-radius: 4px; }
-.leyenda-uv { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }
-.uv-cat { display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }
-.uv-muestra { width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }
 .valor-dias { font-size: 1.6rem !important; font-weight: 700; margin: 0.1rem 0 !important; }
 .dia-records { margin: 0.3rem 0 0 !important; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem; }
 .etiqueta-record { font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 0.1rem 0.5rem; cursor: help; }
