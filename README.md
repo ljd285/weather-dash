@@ -12,7 +12,7 @@ Cada sección dice de dónde salen sus datos y resume lo esencial en una línea 
 
 - **Avisos**: avisos meteorológicos de AEMET (Meteoalerta) en vigor o próximos para la zona de la estación.
 - **Ahora**: última observación de la estación (temperatura, viento, humedad, precipitación), agrupada en «Aire» y «Mar».
-- **Predicción**: tarjetas de los 7 días con cielo, máxima y mínima, probabilidad de lluvia y viento.
+- **Predicción**: tarjetas de los 7 días con cielo, máxima y mínima, probabilidad de lluvia, viento e índice UV (con el color de su categoría de la OMS; AEMET solo lo da para los primeros días).
 - **Histórico**: temperatura (sobre la banda de valores normales), precipitación, viento y humedad de los últimos 90 días.
 - **Comparación con lo normal**: el último mes completo frente a los valores normales de la estación (el periodo de referencia se lee de los metadatos de AEMET), clasificado como hace AEMET (frío/normal/cálido, seco/normal/húmedo…).
 - **Días señalados** del último mes completo (días de calor, noches tropicales y tórridas, días de lluvia, rachas fuertes…) junto a lo normal.

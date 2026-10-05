@@ -1825,6 +1825,19 @@ def _barra_viento(medio, racha, tope):
     )
 
 
+#: Categorías del índice UV de la OMS: (hasta, nombre, color).
+CATEGORIAS_UV = [
+    (2, "bajo", "#289500"), (5, "moderado", "#F7E400"), (7, "alto", "#F85900"),
+    (10, "muy alto", "#D8001D"), (None, "extremo", "#6B49C8"),
+]
+
+
+def categoria_uv(valor):
+    for limite, nombre, color in CATEGORIAS_UV:
+        if limite is None or valor <= limite:
+            return nombre, color
+
+
 #: Etiqueta corta de cada récord para las tarjetas de la predicción.
 ETIQUETAS_RECORD = {"tmax": "de calor", "tmin": "de frío", "prec": "de lluvia"}
 
@@ -1866,6 +1879,13 @@ def construir_tarjetas_pronostico(df, extremos=None):
             )
         lluvia = (f'<span aria-hidden="true">💧</span><span class="solo-lector">Probabilidad de lluvia:</span> {fila.prob_precip:.0f} %'
                   if pd.notna(fila.prob_precip) else "")
+        uv = getattr(fila, "uv_max", None)
+        if uv is not None and pd.notna(uv):  # AEMET solo lo da para los primeros días
+            nombre_uv, color_uv = categoria_uv(uv)
+            texto_uv = "#1A1A1A" if nombre_uv == "moderado" else "#FFFFFF"
+            lluvia += (f' <span class="uv-tarjeta" style="background:{color_uv};color:{texto_uv}" '
+                       f'title="Índice UV máximo: {uv:.0f} ({nombre_uv})">UV {uv:.0f}'
+                       f'<span class="solo-lector"> ({nombre_uv})</span></span>')
         viento = barra_viento = ""
         medio, racha = getattr(fila, "viento_max", None), getattr(fila, "racha_max", None)
         if pd.notna(medio):

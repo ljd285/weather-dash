@@ -64,3 +64,13 @@ def test_barra_de_viento_en_la_prediccion():
     assert "left:0%;width:100%" in html  # racha de 75
     assert "left:0%;width:13%" in html  # sin racha: hasta el viento medio (10)
     assert f.color_viento(0) == "#D9F0A3" and f.color_viento(100) == "#543005"
+
+
+def test_uv_en_las_tarjetas():
+    df = _prediccion([0, 10, 20])
+    df["uv_max"] = [8, 4, None]
+    html = f.construir_tarjetas_pronostico(df)
+    assert html.count("uv-tarjeta") == 2  # AEMET solo da el UV de los primeros días
+    assert "background:#D8001D;color:#FFFFFF" in html and "UV 8" in html and "(muy alto)" in html
+    assert "background:#F7E400;color:#1A1A1A" in html
+    assert f.categoria_uv(11)[0] == "extremo"

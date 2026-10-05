@@ -154,6 +154,7 @@ h2 { font-size: 1.3rem; font-weight: 500; }
 .t-max { font-weight: 700; }
 .t-min { color: var(--texto-secundario); }
 .dia-detalle { font-size: 0.8rem; color: var(--texto-secundario); }
+.uv-tarjeta { display: inline-block; font-size: 0.7rem; font-weight: 700; border-radius: 4px; padding: 0 0.3rem; margin-left: 0.2rem; white-space: nowrap; cursor: help; }
 .rango-semana { position: relative; height: 6px; margin: 0.35rem 0.5rem; border-radius: 3px; background: var(--borde); }
 .rango-semana > span { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
 /* Texto solo para lectores de pantalla (p. ej. en lugar de un emoji). */
