@@ -252,15 +252,37 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
 }
 .cal-boton.activo { background: var(--color-historico); color: var(--superficie); }
 .cal-resumen { margin: 0 0 0.5rem; font-size: 0.95rem; }
-.cal-scroll { overflow-x: auto; direction: rtl; background: var(--superficie); border-radius: 8px; padding: 0.6rem; box-shadow: 0 1px 3px var(--sombra); }
-.cal-rejilla {
-    direction: ltr; display: grid; gap: 3px; min-width: calc(1.4rem + var(--semanas) * 14px);
-    grid-template-columns: 1.4rem repeat(var(--semanas), minmax(11px, 1fr));
-    grid-template-rows: auto repeat(7, auto);
-}
-.cal-mes { grid-row: 1; font-size: 0.72rem; color: var(--texto-secundario); white-space: nowrap; }
-.cal-semana { grid-column: 1; font-size: 0.68rem; color: var(--texto-secundario); align-self: center; }
-.cal-dia { display: block; aspect-ratio: 1; border-radius: 2px; background: var(--q0); position: relative; cursor: pointer; }
+.cal-controles { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem 1rem; margin-bottom: 0.5rem; }
+.cal-controles .cal-botones { margin-bottom: 0; }
+.cal-modo { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; cursor: pointer; }
+.cal-modo input { width: 1.05rem; height: 1.05rem; accent-color: var(--color-historico); cursor: pointer; }
+.cal-scroll { overflow-x: auto; background: var(--superficie); border-radius: 8px; padding: 0.6rem; box-shadow: 0 1px 3px var(--sombra); }
+/* Heatmap: una fila por mes, una columna por día y el resumen del mes. */
+.cal-rejilla { display: grid; gap: 2px; grid-template-columns: 3.1rem repeat(31, minmax(6px, 1fr)) 3.6rem; align-items: center; }
+.cal-mes { font-size: 0.72rem; color: var(--texto-secundario); white-space: nowrap; }
+.cal-num { font-size: 0.68rem; color: var(--texto-secundario); text-align: center; }
+.cal-col-mes { font-size: 0.75rem; font-weight: 700; text-align: right; white-space: nowrap; padding-left: 0.3rem; }
+.cal-num.cal-col-mes { font-weight: 400; }
+.cal-col-mes .calido { color: #C62828; } .cal-col-mes .frio { color: #1565C0; }
+:root[data-theme="dark"] .cal-col-mes .calido { color: #EF9A9A; } :root[data-theme="dark"] .cal-col-mes .frio { color: #90CAF9; }
+.cal-dia { display: block; aspect-ratio: 1.15; border-radius: 2px; background: var(--q0); position: relative; cursor: pointer; }
+.cal-dia.futuro { background: transparent; cursor: default; }
+/* «Frente a lo normal» (por defecto) o «valor»: la casilla cambia lo que se ve. */
+.calendario.modo-valor .solo-normal, .calendario:not(.modo-valor) .solo-valor { display: none; }
+.calendario.modo-valor .cal-rejilla .cal-dia[style], .cal-leyenda .cal-dia[style] { background: var(--v); }
+.calendario:not(.modo-valor) .cal-rejilla .cal-dia.seco { background: var(--q0); }
+.calendario:not(.modo-valor) .cal-rejilla .cal-dia.r0 { background: #C7E9C0; }
+.calendario:not(.modo-valor) .cal-rejilla .cal-dia.r1 { background: #74C476; }
+.calendario:not(.modo-valor) .cal-rejilla .cal-dia.r2 { background: #238B45; }
+.calendario:not(.modo-valor) .cal-rejilla .cal-dia.r3 { background: #00441B; }
+.cal-leyenda .cal-dia.r0 { background: #C7E9C0; } .cal-leyenda .cal-dia.r1 { background: #74C476; }
+.cal-leyenda .cal-dia.r2 { background: #238B45; } .cal-leyenda .cal-dia.r3 { background: #00441B; }
+:root[data-theme="dark"] .calendario:not(.modo-valor) .cal-rejilla .cal-dia.r0, :root[data-theme="dark"] .cal-leyenda .cal-dia.r0 { background: #1E4D2B; }
+:root[data-theme="dark"] .calendario:not(.modo-valor) .cal-rejilla .cal-dia.r1, :root[data-theme="dark"] .cal-leyenda .cal-dia.r1 { background: #2E8B47; }
+:root[data-theme="dark"] .calendario:not(.modo-valor) .cal-rejilla .cal-dia.r2, :root[data-theme="dark"] .cal-leyenda .cal-dia.r2 { background: #5CC97A; }
+:root[data-theme="dark"] .calendario:not(.modo-valor) .cal-rejilla .cal-dia.r3, :root[data-theme="dark"] .cal-leyenda .cal-dia.r3 { background: #B7F0C5; }
+.cal-leyenda > .solo-normal, .cal-leyenda > .solo-valor { display: contents; }
+.calendario.modo-valor .cal-leyenda > .solo-normal, .calendario:not(.modo-valor) .cal-leyenda > .solo-valor { display: none; }
 .cal-dia.t0 { background: var(--t0); } .cal-dia.t1 { background: var(--t1); } .cal-dia.t2 { background: var(--t2); }
 .cal-dia.t3 { background: var(--t3); } .cal-dia.t4 { background: var(--t4); } .cal-dia.t5 { background: var(--t5); }
 .cal-dia.t6 { background: var(--t6); }
@@ -365,6 +387,14 @@ s.e0 { background: #66BB6A; } s.e1 { background: #FFD54F; } s.e2 { background: #
 :root[data-theme="dark"] .chip.t0, :root[data-theme="dark"] .chip.t6,
 :root[data-theme="dark"] .chip.q4, :root[data-theme="dark"] .chip.q5 { color: #111111; }
 .resumen-dias { margin: 0.5rem 0 0.25rem; font-size: 0.92rem; }
+@media (max-width: 640px) {
+    .cal-scroll { padding: 0.4rem; }
+    .cal-rejilla { gap: 1px; grid-template-columns: 2.3rem repeat(31, minmax(5px, 1fr)) 2.7rem; }
+    .cal-mes, .cal-num { font-size: 0.6rem; }
+    .cal-col-mes { font-size: 0.62rem; padding-left: 0.15rem; }
+    .cal-dia { aspect-ratio: 0.8; border-radius: 1px; }
+    .cal-dia.record::after { font-size: 0.5rem; }
+}
 @media (max-width: 640px) {
     .tabla-dias { font-size: 0.78rem; }
     .tabla-dias th, .tabla-dias td { padding: 0.4rem 0.2rem; }

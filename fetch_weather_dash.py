@@ -2824,7 +2824,8 @@ def construir_anio_hidrologico(df_completo, normales_registros):
     ]
 
 
-SEMANAS_CALENDARIO = 53
+SEMANAS_CALENDARIO = 53  # histórico que se descarga para el calendario (cubre MESES_CALENDARIO)
+MESES_CALENDARIO = 12
 
 #: Clases del calendario de temperatura según el percentil del día en su
 #: época (1991-2020, ±7 días): (percentil hasta el que llega, etiqueta).
@@ -2842,6 +2843,9 @@ UMBRALES_CALENDARIO = [
 #: Récord mensual de la estación que se marca con ★: (variable, por abajo).
 RECORDS_CALENDARIO = {"tmax": False, "tmin": True, "prec": False}
 #: Clases del calendario de lluvia: (mm hasta los que llega, etiqueta).
+#: Lluvia de un día frente a lo normal: percentil entre los días de lluvia
+#: (≥ 1 mm) de su época en 1991-2020.
+CLASES_LLUVIA_NORMAL = [(25, "poca para la época"), (75, "normal para la época"), (90, "abundante"), (None, "muy abundante")]
 CLASES_LLUVIA_DIA = [(0.05, "sin lluvia"), (1, "< 1 mm"), (5, "1–5 mm"), (15, "5–15 mm"), (30, "15–30 mm"), (None, "≥ 30 mm")]
 VISTAS_CALENDARIO = [("tmax", "Máxima", "máx."), ("tmin", "Mínima", "mín."), ("prec", "Lluvia", "lluvia")]
 
@@ -2854,9 +2858,9 @@ def _clase(valor, clases):
 
 
 def datos_calendario(df_completo, df_provisional, fin=None):
-    """Días del calendario (las últimas SEMANAS_CALENDARIO semanas, de lunes
-    a domingo, hasta el último día con dato): fecha, tmax, tmin, prec y si
-    el dato es provisional (calculado con las observaciones horarias)."""
+    """Días del calendario (los MESES_CALENDARIO últimos meses naturales,
+    hasta el último día con dato): fecha, tmax, tmin, prec y si el dato es
+    provisional (calculado con las observaciones horarias)."""
     partes = []
     for df, provisional in ((df_completo, False), (df_provisional, True)):
         if df is not None and not df.empty:
@@ -2868,9 +2872,8 @@ def datos_calendario(df_completo, df_provisional, fin=None):
     datos["fecha"] = pd.to_datetime(datos["fecha"]).dt.normalize()
     datos = datos.drop_duplicates("fecha", keep="first").set_index("fecha")
     fin = pd.Timestamp(fin) if fin is not None else datos.index.max()
-    domingo = fin + pd.Timedelta(days=6 - fin.weekday())
-    inicio = domingo - pd.Timedelta(weeks=SEMANAS_CALENDARIO) + pd.Timedelta(days=1)
-    dias = pd.date_range(inicio, domingo, freq="D")
+    inicio = (fin.to_period("M") - (MESES_CALENDARIO - 1)).to_timestamp()
+    dias = pd.date_range(inicio, fin, freq="D")
     return datos.reindex(dias).rename_axis("fecha").reset_index()
 
 
@@ -2895,14 +2898,18 @@ def _record_del_dia(extremos, var, fecha, valor):
 
 
 def construir_calendario(datos, clima, extremos=None, normales_umbral=None):
-    """Calendario estilo GitHub (una columna por semana, una fila por día de
-    la semana) con cada día coloreado según cómo fue frente a lo normal
-    para su fecha: máxima y mínima por percentil en su época de 1991-2020,
-    y lluvia por cantidad. Tres vistas que se eligen con botones. Una ★
-    marca los días que batieron o igualaron el récord mensual de la estación
-    (`extremos`), y unos botones resaltan los días que pasan de ciertos
-    umbrales (UMBRALES_CALENDARIO), con su recuento frente a la media anual
-    de 1991-2020 (`normales_umbral`: {(variable, umbral): días al año})."""
+    """Heatmap del último año: una fila por mes y una columna por día del
+    mes, con un resumen del mes a la derecha. Tres vistas (máxima, mínima,
+    lluvia) que se eligen con botones, y una casilla que cambia entre el día
+    frente a lo normal para su fecha (por defecto) y el valor en sí:
+    - máxima y mínima: percentil del día en su época de 1991-2020 / la
+      temperatura con la escala de las tarjetas;
+    - lluvia: si fue poca o mucha para lo que suele caer cuando llueve en
+      esas fechas / la cantidad.
+    Una ★ marca los días que batieron o igualaron el récord mensual de la
+    estación (`extremos`), y unos botones resaltan los días que pasan de
+    ciertos umbrales (UMBRALES_CALENDARIO), con su recuento frente a la media
+    anual de 1991-2020 (`normales_umbral`: {(variable, umbral): días al año})."""
     if datos.empty:
         return ""
     if not clima:
@@ -2910,84 +2917,127 @@ def construir_calendario(datos, clima, extremos=None, normales_umbral=None):
                 'estación (1991–2020), que aún no se ha descargado: se hace una sola vez con el workflow '
                 '«Descargar climatología diaria».</p>')
     hoy = pd.Timestamp(datetime.now(ZONA_HORARIA).date())
-    primer_lunes = datos["fecha"].min()
+    por_fecha = datos.set_index("fecha")
+    meses = pd.period_range(datos["fecha"].min(), datos["fecha"].max(), freq="M")
+    medias_lluvia, probabilidades = climatologia.lluvia_normal(clima, datos["fecha"])
+    lluvia_media = dict(zip(datos["fecha"], medias_lluvia, strict=True))
+    lluvia_prob = dict(zip(datos["fecha"], probabilidades, strict=True))
+    cabecera = ('<span></span>' + "".join(f'<span class="cal-num">{d if d in (1, 5, 10, 15, 20, 25, 31) else ""}</span>'
+                                          for d in range(1, 32)) + '<span class="cal-num cal-col-mes">mes</span>')
     botones, vistas = [], []
     for n, (var, nombre, abreviatura) in enumerate(VISTAS_CALENDARIO):
-        celdas = []
         calidos = frios = con_dato = 0
         umbrales = [(u, texto) for v, u, texto in UMBRALES_CALENDARIO if v == var]
         cuenta_umbral = dict.fromkeys((u for u, _ in umbrales), 0)
         anomalias = []
         total = total_normal = dias_lluvia = dias_lluvia_normal = 0.0
-        medias, probabilidades = (climatologia.lluvia_normal(clima, datos["fecha"]) if var == "prec" else ([], []))
-        for i, fila in enumerate(datos.itertuples()):
-            fecha = fila.fecha
-            columna = (fecha - primer_lunes).days // 7 + 2
-            fila_grid = fecha.weekday() + 2
-            if fecha.day == 1:  # rótulo del mes, sobre la semana en que empieza
-                celdas.append(f'<span class="cal-mes" style="grid-column:{columna} / span 3">{NOMBRES_MES[fecha.month][:3]}</span>')
-            if fecha > hoy:
-                continue
-            valor = getattr(fila, var, None)
-            texto_fecha = f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha.day} {NOMBRES_MES[fecha.month][:3]} {fecha.year}"
-            clases = ["cal-dia"]
-            if valor is None or pd.isna(valor):
-                clases.append("sin-dato")
-                texto = f"{texto_fecha}: sin dato"
-            elif var == "prec":
-                clase = _clase(valor, CLASES_LLUVIA_DIA)
-                clases.append(f"q{clase}")
-                texto = f"{texto_fecha}: {_es(valor)} mm" if valor >= 0.05 else f"{texto_fecha}: sin lluvia"
-                if medias[i] is not None:
-                    texto += f" · en esas fechas llueve (≥ 1 mm) el {100 * probabilidades[i]:.0f} % de los días"
-                    total += valor
-                    total_normal += medias[i]
-                    dias_lluvia += valor >= 1
-                    dias_lluvia_normal += probabilidades[i]
-            else:
-                comparacion = climatologia.comparar_dia(clima, var, fecha, valor)
-                texto = f"{texto_fecha}: {abreviatura} {_es(valor)} °C"
-                if comparacion is None:
-                    clases.append("sin-normal")
+        filas = [cabecera]
+        for mes in meses:
+            celdas = []
+            valores_mes, anomalias_mes, normal_mes = [], [], 0.0
+            for dia in range(1, 32):
+                if dia > mes.days_in_month:
+                    celdas.append("<span></span>")
+                    continue
+                fecha = pd.Timestamp(mes.year, mes.month, dia)
+                if fecha > hoy or fecha not in por_fecha.index:
+                    celdas.append('<span class="cal-dia futuro"></span>')
+                    continue
+                fila = por_fecha.loc[fecha]
+                valor = fila.get(var)
+                texto_fecha = f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha.day} {NOMBRES_MES[fecha.month][:3]} {fecha.year}"
+                clases, estilo = ["cal-dia"], ""
+                if valor is None or pd.isna(valor):
+                    clases.append("sin-dato")
+                    texto = f"{texto_fecha}: sin dato"
+                elif var == "prec":
+                    clases.append(f"q{_clase(valor, CLASES_LLUVIA_DIA)}")
+                    if valor < 1:
+                        clases.append("seco")  # frente a lo normal, < 1 mm no cuenta como día de lluvia
+                    texto = f"{texto_fecha}: {_es(valor)} mm" if valor >= 0.05 else f"{texto_fecha}: sin lluvia"
+                    p = climatologia.percentil_lluvia(clima, fecha, valor)
+                    if p is not None:
+                        clase = _clase(p, CLASES_LLUVIA_NORMAL)
+                        clases.append(f"r{clase}")
+                        texto += f" · {CLASES_LLUVIA_NORMAL[clase][1]} (percentil {p:.0f} de los días de lluvia de su época)"
+                    valores_mes.append(valor)
+                    if lluvia_media[fecha] is not None:
+                        texto += f" · en esas fechas llueve (≥ 1 mm) el {100 * lluvia_prob[fecha]:.0f} % de los días"
+                        total += valor
+                        total_normal += lluvia_media[fecha]
+                        normal_mes += lluvia_media[fecha]
+                        dias_lluvia += valor >= 1
+                        dias_lluvia_normal += lluvia_prob[fecha]
                 else:
-                    p = comparacion["percentil"]
-                    clase = _clase(p, CLASES_PERCENTIL)
-                    clases.append(f"t{clase}")
-                    diferencia = valor - comparacion["normal"]
-                    texto += (f" · normal {_es(comparacion['normal'])} °C ({'+' if diferencia >= 0 else ''}{_es(diferencia)})"
-                              f" · percentil {p:.0f}: {CLASES_PERCENTIL[clase][1]}")
-                    if valor > comparacion["maximo"] or valor < comparacion["minimo"]:
-                        clases.append("fuera")
-                        texto += " · fuera de todo lo registrado en esas fechas en 1991–2020"
-                    con_dato += 1
-                    calidos += p >= PERCENTIL_MUY_CALIDO
-                    frios += p < PERCENTIL_MUY_FRIO
-                    anomalias.append(diferencia)
-                for umbral, _ in umbrales:
-                    if valor >= umbral:
-                        clases.append(f"u{umbral}")
-                        cuenta_umbral[umbral] += 1
-            record = _record_del_dia(extremos, var, fecha, valor)
-            if record:
-                clases = [c for c in clases if c != "fuera"] + ["record"]
-                texto += f" · {record}"
-            if fila.provisional is True:
-                clases.append("prov")
-                texto += " · provisional (AEMET aún no lo ha validado)"
-            texto = html.escape(texto)
-            celdas.append(f'<span class="{" ".join(clases)}" style="grid-area:{fila_grid}/{columna}" title="{texto}" '
-                          f'data-info="{texto}"></span>')
+                    estilo = f' style="--v:{color_temperatura(valor)}"'
+                    valores_mes.append(valor)
+                    comparacion = climatologia.comparar_dia(clima, var, fecha, valor)
+                    texto = f"{texto_fecha}: {abreviatura} {_es(valor)} °C"
+                    if comparacion is None:
+                        clases.append("sin-normal")
+                    else:
+                        p = comparacion["percentil"]
+                        clase = _clase(p, CLASES_PERCENTIL)
+                        clases.append(f"t{clase}")
+                        diferencia = valor - comparacion["normal"]
+                        texto += (f" · normal {_es(comparacion['normal'])} °C ({'+' if diferencia >= 0 else ''}{_es(diferencia)})"
+                                  f" · percentil {p:.0f}: {CLASES_PERCENTIL[clase][1]}")
+                        if valor > comparacion["maximo"] or valor < comparacion["minimo"]:
+                            clases.append("fuera")
+                            texto += " · fuera de todo lo registrado en esas fechas en 1991–2020"
+                        con_dato += 1
+                        calidos += p >= PERCENTIL_MUY_CALIDO
+                        frios += p < PERCENTIL_MUY_FRIO
+                        anomalias.append(diferencia)
+                        anomalias_mes.append(diferencia)
+                    for umbral, _ in umbrales:
+                        if valor >= umbral:
+                            clases.append(f"u{umbral}")
+                            cuenta_umbral[umbral] += 1
+                record = _record_del_dia(extremos, var, fecha, valor)
+                if record:
+                    clases = [c for c in clases if c != "fuera"] + ["record"]
+                    texto += f" · {record}"
+                if fila.get("provisional") is True:
+                    clases.append("prov")
+                    texto += " · provisional (AEMET aún no lo ha validado)"
+                texto = html.escape(texto)
+                celdas.append(f'<span class="{" ".join(clases)}"{estilo} title="{texto}" data-info="{texto}"></span>')
+            # Resumen del mes: frente a lo normal y valor (la casilla elige cuál se ve).
+            frente, valor_mes = "", ""
+            if var == "prec":
+                if valores_mes:
+                    valor_mes = f"{_es(sum(valores_mes), 0)} mm"
+                    if normal_mes:
+                        frente = f"{100 * sum(valores_mes) / normal_mes:.0f} %"
+            else:
+                if anomalias_mes:
+                    m = sum(anomalias_mes) / len(anomalias_mes)
+                    signo = "calido" if m >= 0.5 else "frio" if m <= -0.5 else ""
+                    frente = f'<span class="{signo}">{"+" if m >= 0 else "−"}{_es(abs(m))}°</span>'
+                if valores_mes:
+                    valor_mes = f"{_es(sum(valores_mes) / len(valores_mes))}°"
+            resumen_mes = (f'<span class="cal-col-mes"><span class="solo-normal">{frente}</span>'
+                           f'<span class="solo-valor">{valor_mes}</span></span>')
+            filas.append(f'<span class="cal-mes">{NOMBRES_MES[mes.month][:3]} {str(mes.year)[2:]}</span>{"".join(celdas)}{resumen_mes}')
 
-        dias_semana = "".join(f'<span class="cal-semana" style="grid-row:{f}">{t}</span>' for f, t in ((2, "L"), (4, "X"), (6, "V")))
         if var == "prec":
-            leyenda_clases = [(f"q{i}", etiqueta) for i, (_, etiqueta) in enumerate(CLASES_LLUVIA_DIA)]
+            leyenda_normal = ['<span class="cal-leyenda-item"><span class="cal-dia q0"></span>sin lluvia (&lt; 1 mm)</span>']
+            leyenda_normal += [f'<span class="cal-leyenda-item"><span class="cal-dia r{i}"></span>{e}</span>'
+                               for i, (_, e) in enumerate(CLASES_LLUVIA_NORMAL)]
+            leyenda_valor = [f'<span class="cal-leyenda-item"><span class="cal-dia q{i}"></span>{e}</span>'
+                             for i, (_, e) in enumerate(CLASES_LLUVIA_DIA)]
             resumen = ""
             if total_normal:
                 resumen = (f"<strong>{_es(total, 0)} mm</strong> frente a {_es(total_normal, 0)} mm normales "
                            f"({100 * total / total_normal:.0f} %) · {dias_lluvia:.0f} días de lluvia (≥ 1 mm), "
                            f"lo normal son {dias_lluvia_normal:.0f}")
         else:
-            leyenda_clases = [(f"t{i}", etiqueta) for i, (_, etiqueta) in enumerate(CLASES_PERCENTIL)]
+            leyenda_normal = [f'<span class="cal-leyenda-item"><span class="cal-dia t{i}"></span>{e}</span>'
+                              for i, (_, e) in enumerate(CLASES_PERCENTIL)]
+            leyenda_normal.append('<span class="cal-leyenda-item"><span class="cal-dia t6 fuera"></span>fuera de lo registrado</span>')
+            leyenda_valor = [f'<span class="cal-leyenda-item"><span class="cal-dia" style="--v:{color_temperatura(t)};'
+                             f'background:{color_temperatura(t)}"></span>{t}°</span>' for t in (0, 5, 10, 15, 20, 25, 30, 35, 40)]
             resumen = ""
             if con_dato:
                 media = sum(anomalias) / len(anomalias)
@@ -2995,11 +3045,10 @@ def construir_calendario(datos, clima, extremos=None, normales_umbral=None):
                 resumen = (f"<strong>{'+' if media >= 0 else ''}{_es(media)} °C</strong> de media sobre lo normal · "
                            f"{calidos} días muy cálidos y {frios} muy fríos "
                            f"(lo esperable, unos {esperados} de cada)")
-        leyenda = "".join(f'<span class="cal-leyenda-item"><span class="cal-dia {c}"></span>{e}</span>' for c, e in leyenda_clases)
-        if var != "prec":
-            leyenda += '<span class="cal-leyenda-item"><span class="cal-dia t6 fuera"></span>fuera de lo registrado</span>'
-        leyenda += '<span class="cal-leyenda-item"><span class="cal-dia t3 record"></span>récord del mes en la estación</span>'
-        leyenda += '<span class="cal-leyenda-item"><span class="cal-dia t3 prov"></span>provisional</span>'
+        comunes = ('<span class="cal-leyenda-item"><span class="cal-dia t3 record"></span>récord del mes en la estación</span>'
+                   '<span class="cal-leyenda-item"><span class="cal-dia t3 prov"></span>provisional</span>')
+        leyenda = (f'<span class="solo-normal">{"".join(leyenda_normal)}</span>'
+                   f'<span class="solo-valor">{"".join(leyenda_valor)}</span>{comunes}')
         filtros = ""
         for umbral, texto_boton in umbrales:
             normal = (normales_umbral or {}).get((var, umbral))
@@ -3014,19 +3063,23 @@ def construir_calendario(datos, clima, extremos=None, normales_umbral=None):
         vistas.append(
             f'<div class="cal-vista" data-vista="{var}"{"" if activa else " hidden"}>'
             + (f'<p class="cal-resumen">Últimos 12 meses: {resumen}.</p>' if resumen else "")
-            + f'<div class="cal-scroll"><div class="cal-rejilla" style="--semanas:{SEMANAS_CALENDARIO}">{dias_semana}{"".join(celdas)}</div></div>'
+            + f'<div class="cal-scroll"><div class="cal-rejilla">{"".join(filas)}</div></div>'
             f'{filtros}<div class="cal-leyenda">{leyenda}</div></div>'
         )
     explicacion = (
-        '<p class="aviso">Cada casilla es un día. En máxima y mínima, el color dice dónde queda ese día entre los '
-        f'de su época (±{climatologia.VENTANA_DIAS} días) en 1991–2020 en esta estación: «normal» es el '
-        '20 % central; «muy cálido» o «muy frío», el 10 % más extremo. En lluvia, la cantidad del día. La ★ marca '
-        'los días que batieron o igualaron el récord del mes en la estación, y los botones de cada vista resaltan '
-        'los días que pasan de un umbral (el recuento es del último año; «normal», la media anual de 1991–2020). '
-        'Pasa el ratón o toca un día para ver el detalle.</p>'
+        '<p class="aviso">Cada casilla es un día; a la derecha, el resumen del mes. «Frente a lo normal»: en máxima '
+        f'y mínima, el color dice dónde queda el día entre los de su época (±{climatologia.VENTANA_DIAS} días) en '
+        '1991–2020 en esta estación («normal» es el 20 % central; «muy cálido» o «muy frío», el 10 % más extremo) y el '
+        'mes, cuánto se desvió de media; en lluvia, si fue poca o mucha para lo que suele caer cuando llueve en esas '
+        'fechas, y el mes, qué % de su lluvia normal recogió. «Valor»: la temperatura o la lluvia en sí, y la media o '
+        'el total del mes. La ★ marca los días que batieron o igualaron el récord del mes en la estación, y los botones '
+        'de cada vista resaltan los días que pasan de un umbral (el recuento es del último año; «normal», la media '
+        'anual de 1991–2020). Pasa el ratón o toca un día para ver el detalle.</p>'
     )
     return (
-        f'<div class="calendario"><div class="cal-botones" role="group" aria-label="Variable">{"".join(botones)}</div>'
+        '<div class="calendario"><div class="cal-controles"><div class="cal-botones" role="group" aria-label="Variable">'
+        f'{"".join(botones)}</div><label class="cal-modo"><input type="checkbox" class="cal-modo-valor"> '
+        'Ver el valor (sin comparar con lo normal)</label></div>'
         f'{"".join(vistas)}<p class="cal-detalle" aria-live="polite">&nbsp;</p>{explicacion}</div>'
     )
 
