@@ -30,11 +30,10 @@ def test_sensacion_termica_y_punto_de_rocio():
     assert f.confort_rocio(18.9) == "bochornoso"
 
 
-def test_umbrales_de_intensidad_uv_y_viento():
+def test_umbrales_de_intensidad_y_viento():
     assert f.clase_intensidad_lluvia(1.2) == "débil"
     assert f.clase_intensidad_lluvia(30) == "fuerte"
     assert f.clase_intensidad_lluvia(154.8) == "torrencial"
-    assert f.categoria_uv(8)[0] == "muy alto" and f.categoria_uv(11)[0] == "extremo"
     assert f._sector_viento(0) == "N" and f._sector_viento(112) == "E" and f._sector_viento(350) == "N"
     assert f._sector_viento(990) is None
 

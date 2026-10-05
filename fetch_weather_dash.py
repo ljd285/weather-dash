@@ -1351,11 +1351,6 @@ def prediccion_a_dataframe(prediccion):
     return df
 
 
-def _texto_barras(serie, sufijo):
-    """Etiquetas de texto para barras, en el mismo orden que la serie."""
-    return [f"{v:.0f}{sufijo}" if pd.notna(v) else "" for v in serie]
-
-
 # Fechas en orden español ("6 sept") en ejes y ventanas emergentes.
 FORMATO_FECHAS = dict(tickformat="%-d %b", hoverformat="%-d %b %Y")
 
@@ -2281,135 +2276,6 @@ def construir_bloque_acierto(verif, reales, hoy, desde=None):
         f'<div class="botones-plazo">Previsión hecha {"".join(botones)}</div>{"".join(tablas)}'
         f'<p class="subtitulo-acierto">Última semana, día a día</p>{tabla_semana}</div>'
     )
-
-
-def construir_graficos_prediccion(df):
-    """Devuelve una lista de fragmentos HTML, uno por variable (temperatura,
-    probabilidad de precipitación, viento, humedad), cada uno a ancho
-    completo — en vez de una única cuadrícula 2x2, que en pantallas
-    estrechas (móvil) quedaría ilegible porque Plotly la calcula como una
-    sola imagen de tamaño fijo. Temperatura y humedad usan barras
-    superpuestas (mínima delante/encima de máxima, valor dentro/fuera de
-    la barra); cada gráfico lleva una línea vertical separando los días."""
-    if df.empty:
-        return ['<p class="aviso">No se pudo cargar la predicción en esta ejecución.</p>']
-
-    graficos = []
-    layout_comun = dict(template="plotly_white", height=320, margin=dict(t=50, b=40, l=50, r=20))
-
-    def lineas_de_dia(fig):
-        fig.update_xaxes(tickformat="%a %-d", hoverformat="%A %-d de %B")
-        for fecha in df["fecha"]:
-            fig.add_vline(x=fecha, line_width=1, line_dash="dot", line_color=MATERIAL["gris"], opacity=0.3)
-
-    # Temperatura: la máxima se dibuja primero (detrás, texto fuera para que
-    # no quede tapado) y la mínima después (delante/encima, texto dentro).
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df["fecha"], y=df["tmax"], name="Máxima prevista", marker_color=MATERIAL["rojo"],
-        # Texto dentro, arriba: encima de la barra van las marcas de sensación.
-        text=_texto_barras(df["tmax"], "°"), textposition="inside", insidetextanchor="end",
-    ))
-    fig.add_trace(go.Bar(
-        x=df["fecha"], y=df["tmin"], name="Mínima prevista", marker_color=MATERIAL["azul"],
-        text=_texto_barras(df["tmin"], "°"), textposition="inside",
-    ))
-    # Sensación térmica prevista por AEMET, como marcas sobre las barras; solo
-    # si se aparta de la temperatura en algún día (con calor húmedo o frío
-    # con viento), para no recargar el gráfico cuando coinciden.
-    series_rango = [df["tmax"], df["tmin"]]
-    for col, col_t, nombre, color in [
-        ("sens_max", "tmax", "Sensación máx.", "#B71C1C"),
-        ("sens_min", "tmin", "Sensación mín.", "#0D47A1"),
-    ]:
-        if col not in df.columns:
-            continue
-        distinta = (df[col] - df[col_t]).abs() >= 1
-        if distinta.any():
-            fig.add_trace(go.Scatter(
-                x=df["fecha"], y=df[col].where(distinta), name=nombre, mode="markers",
-                marker=dict(symbol="diamond", size=10, color=color, line=dict(color="#FFFFFF", width=1.5)),
-                hovertemplate="%{y:.0f} °C",
-            ))
-            series_rango.append(df[col])
-    lineas_de_dia(fig)
-    fig.update_yaxes(range=_rango_eje(series_rango, 5, 45, 3), title="°C")
-    fig.update_layout(title="Temperatura prevista", barmode="overlay", legend=dict(orientation="h", y=-0.25), **layout_comun)
-    graficos.append(_html_grafico(fig))
-
-    # Probabilidad de precipitación
-    if "prob_precip" in df.columns:
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=df["fecha"], y=df["prob_precip"], name="Prob. precipitación", marker_color=MATERIAL["azul_claro"]))
-        lineas_de_dia(fig)
-        fig.update_yaxes(range=[0, 100], title="%")
-        fig.update_layout(title="Prob. precipitación prevista", showlegend=False, **layout_comun)
-        graficos.append(_html_grafico(fig))
-
-    # Viento
-    fig = go.Figure()
-    if "viento_max" in df.columns:
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento_max"], name="Viento previsto", mode="lines+markers", line=dict(color=MATERIAL["indigo"], width=2, dash=TRAZO_PREVISION)))
-    if "racha_max" in df.columns:
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha_max"], name="Racha prevista", mode="lines+markers", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot")))
-    lineas_de_dia(fig)
-    fig.update_yaxes(range=_rango_eje([df.get("viento_max"), df.get("racha_max")], 0, 50, 5), title="km/h")
-    fig.update_layout(title="Viento previsto", legend=dict(orientation="h", y=-0.25), **layout_comun)
-    graficos.append(_html_grafico(fig))
-
-    # Humedad: igual que temperatura, mínima delante/encima de máxima.
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df["fecha"], y=df["hum_max"], name="Humedad máx. prevista", marker_color=MATERIAL["teal"],
-        text=_texto_barras(df["hum_max"], "%"), textposition="outside",
-    ))
-    fig.add_trace(go.Bar(
-        x=df["fecha"], y=df["hum_min"], name="Humedad mín. prevista", marker_color=MATERIAL["verde"],
-        text=_texto_barras(df["hum_min"], "%"), textposition="inside",
-    ))
-    lineas_de_dia(fig)
-    fig.update_yaxes(range=[0, 100], title="%")
-    fig.update_layout(title="Humedad prevista", barmode="overlay", legend=dict(orientation="h", y=-0.25), **layout_comun)
-    graficos.append(_html_grafico(fig))
-
-    # Índice UV máximo, con los colores y categorías estándar de la OMS.
-    if "uv_max" in df.columns and df["uv_max"].notna().any():
-        datos = df[df["uv_max"].notna()]
-        categorias = [categoria_uv(v) for v in datos["uv_max"]]
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=datos["fecha"], y=datos["uv_max"], name="Índice UV",
-            marker=dict(color=[c[1] for c in categorias]),
-            text=[f"{v:.0f}" for v in datos["uv_max"]], textposition="outside",
-            customdata=[c[0] for c in categorias],
-            hovertemplate="UV %{y:.0f} · %{customdata}<extra></extra>",
-        ))
-        lineas_de_dia(fig)
-        fig.update_xaxes(range=[df["fecha"].min() - pd.Timedelta(hours=12), df["fecha"].max() + pd.Timedelta(hours=12)])
-        fig.update_yaxes(range=[0, max(12, datos["uv_max"].max() + 2)], title="UV")
-        fig.update_layout(title="Índice UV máximo previsto", showlegend=False, **layout_comun)
-        graficos.append(_html_grafico(fig))
-        leyenda = "".join(
-            f'<span class="uv-cat"><span class="uv-muestra" style="background:{color};"></span>'
-            f'{nombre} ({"≥ " + str(limite_anterior + 1) if limite is None else f"{limite_anterior + 1}–{limite}" if limite_anterior + 1 < limite else limite})</span>'
-            for (limite, nombre, color), limite_anterior in zip(CATEGORIAS_UV, [-1] + [c[0] for c in CATEGORIAS_UV[:-1]], strict=True)
-        )
-        graficos.append(f'<p class="aviso leyenda-uv">Categorías de la OMS: {leyenda}. AEMET solo da el índice UV de los primeros días.</p>')
-
-    return graficos
-
-
-#: Categorías del índice UV de la OMS: (límite superior incluido, nombre, color).
-CATEGORIAS_UV = [
-    (2, "bajo", "#289500"), (5, "moderado", "#F7E400"), (7, "alto", "#F85900"),
-    (10, "muy alto", "#D8001D"), (None, "extremo", "#6B49C8"),
-]
-
-
-def categoria_uv(valor):
-    for limite, nombre, color in CATEGORIAS_UV:
-        if limite is None or valor <= limite:
-            return nombre, color
 
 
 def _slug(texto):
@@ -3733,10 +3599,6 @@ def main():
                            'más de 2° ni las mínimas más de 4°; alguna duda: máximas a 3–4°, mínimas a 5–6° o solo algunos '
                            'modelos dan lluvia; hay dudas: más separación, o lluvia de 5 mm o más que no dan todos. '
                            'La franja sombreada va del modelo más alto al más bajo.</p></details>')
-        seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Gráficos de los 7 días</summary>')
-        seccion.append('<div class="graficos-apilados">')
-        seccion.extend(construir_graficos_prediccion(df_pred))
-        seccion.append('</div></details>')
         df_provisional = pd.DataFrame()
         if not df_hist_completo.empty:
             df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
