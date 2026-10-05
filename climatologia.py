@@ -201,6 +201,22 @@ def comparar_dia(clima, var, fecha, valor):
     }
 
 
+def percentil_lluvia(clima, fecha, valor, minimo=1.0, muestra_minima=15):
+    """Percentil de la lluvia de un día entre los días de lluvia (≥ `minimo`
+    mm) de su época en 1991-2020: dice si fue poca o mucha para lo que suele
+    caer cuando llueve en esas fechas. None si no llovió (o no hay bastantes
+    días de lluvia en la época para comparar)."""
+    if "prec" not in clima or valor is None or pd.isna(valor) or valor < minimo:
+        return None
+    muestra = clima["prec"][int(_dia_del_anio([fecha])[0])]
+    lluviosos = muestra[muestra >= minimo]
+    if len(lluviosos) < muestra_minima:
+        return None
+    debajo = np.searchsorted(lluviosos, valor, side="left")
+    iguales = np.searchsorted(lluviosos, valor, side="right") - debajo
+    return float(100 * (debajo + iguales / 2) / len(lluviosos))
+
+
 def lluvia_normal(clima, fechas):
     """Lluvia media diaria (mm) y probabilidad de lluvia (≥ 1 mm) de la
     época de cada fecha, o None donde no hay climatología suficiente."""

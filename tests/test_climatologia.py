@@ -69,7 +69,7 @@ def test_calendario(clima):
     historico.loc[historico["fecha"] == "2026-07-10", "tmax"] = 45.0
     provisional = pd.DataFrame({"fecha": pd.to_datetime(["2026-07-18"]), "tmax": [31.0], "tmin": [21.0], "prec": [12.0]})
     datos = f.datos_calendario(historico, provisional, fin=fin)
-    assert len(datos) == 7 * f.SEMANAS_CALENDARIO and datos["fecha"].iloc[0].weekday() == 0
+    assert datos["fecha"].iloc[0] == pd.Timestamp("2025-08-01") and datos["fecha"].iloc[-1] == fin  # 12 meses naturales
     assert datos.set_index("fecha").loc["2026-07-18", "provisional"]
     extremos = {"tmax": [{"valor": 44.0, "dia": 10.0, "anio": 2023.0, "unidad": "°C"}] * 12}
     normales = {("tmax", 35): 4.23, ("tmin", 20): 63.0}
@@ -82,6 +82,10 @@ def test_calendario(clima):
     assert "Días ≥ 35 °C: <strong>1</strong> · normal 4,2" in html  # solo los 45 °C pasan de 35
     assert "Noches tropicales (≥ 20 °C): <strong>" in html and "· normal 63" in html
     assert "Días ≥ 40 °C: <strong>1</strong></button>" in html  # sin normal: no se muestra
+    # Heatmap mes × día, con «frente a lo normal» y «valor» en cada casilla.
+    assert html.count('<span class="cal-mes">') == 3 * 12 and 'class="cal-modo-valor"' in html
+    assert "--v:" in html and "solo-valor" in html and "solo-normal" in html
+    assert 'class="cal-dia q3 r' in html  # los 12 mm: cantidad y frente a lo normal
     assert "aún no se ha descargado" in f.construir_calendario(datos, {})
 
 
@@ -89,3 +93,11 @@ def test_dias_por_anio():
     serie = serie_sintetica()
     assert c.dias_por_anio(serie, "prec", 1) == pytest.approx(365.25 / 5, rel=0.01)
     assert c.dias_por_anio(pd.DataFrame(), "tmax", 35) is None
+
+
+def test_percentil_de_la_lluvia(clima):
+    fecha = pd.Timestamp("2026-10-10")
+    assert c.percentil_lluvia(clima, fecha, 0.4) is None  # no llovió (< 1 mm)
+    poca, mucha = c.percentil_lluvia(clima, fecha, 1.0), c.percentil_lluvia(clima, fecha, 500.0)
+    assert poca is not None and mucha == 100 and poca < mucha
+    assert c.percentil_lluvia({}, fecha, 10.0) is None

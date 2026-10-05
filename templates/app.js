@@ -289,6 +289,11 @@ document.querySelectorAll('.calendario').forEach(function(cal) {
             }
         });
     });
+    // Casilla «Ver el valor»: cambia entre el día frente a lo normal y el valor en sí.
+    var modo = cal.querySelector('.cal-modo-valor');
+    if (modo) {
+        modo.addEventListener('change', function() { cal.classList.toggle('modo-valor', modo.checked); });
+    }
     function mostrar(ev) {
         var dia = ev.target.closest && ev.target.closest('.cal-rejilla .cal-dia[data-info]');
         if (!dia || !detalle) return;
