@@ -302,6 +302,29 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
 .tabla-dias tbody th small { display: inline; }
 .tabla-dias tfoot th, .tabla-dias tfoot td { font-weight: 700; border-bottom: 0; }
 .tabla-dias .sin-lecturas { text-align: center; color: var(--texto-secundario); font-style: italic; }
+/* Comparar modelos: AEMET frente a otros servicios meteorológicos. */
+.resumen-modelos { background: var(--fondo-pronostico); border-left: 4px solid var(--color-pronostico); border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.25rem 0 0.9rem; font-size: 0.95rem; }
+.tabla-modelos { border-collapse: collapse; width: 100%; font-size: 0.88rem; background: var(--superficie); border-radius: 8px; box-shadow: 0 1px 3px var(--sombra); margin-bottom: 1rem; }
+.tabla-modelos th, .tabla-modelos td { padding: 0.35rem 0.45rem; text-align: center; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+.tabla-modelos tbody th, .tabla-modelos tfoot th { text-align: left; font-weight: 500; }
+.tabla-modelos thead th { font-size: 0.82rem; font-weight: 500; }
+.tabla-modelos small { display: block; font-size: 0.72rem; color: var(--texto-secundario); font-weight: 400; }
+.tabla-modelos .fila-aemet th, .tabla-modelos .fila-aemet td { background: var(--fondo-pronostico); font-weight: 700; }
+.tabla-modelos .sin-dato { color: var(--texto-secundario); }
+.tabla-modelos .chip { min-width: 0; font-size: 0.72rem; padding: 0 0.3rem; }
+.tabla-modelos small .chip { color: #1A1A1A; }
+.tabla-modelos small .chip.q3, .tabla-modelos small .chip.q4, .tabla-modelos small .chip.q5 { color: #FFFFFF; }
+:root[data-theme="dark"] .tabla-modelos small .chip { color: #FFFFFF; }
+:root[data-theme="dark"] .tabla-modelos small .chip.q4, :root[data-theme="dark"] .tabla-modelos small .chip.q5 { color: #111111; }
+.tabla-modelos tfoot th, .tabla-modelos tfoot td { border-bottom: 0; }
+.chip-temp { display: inline-block; border-radius: 4px; padding: 0 0.25rem; font-weight: 700; }
+.acuerdo { display: inline-block; font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 0.08rem 0.5rem; }
+.acuerdo-si { background: #C8E6C9; color: #1B5E20; }
+.acuerdo-algo { background: #FFF3C4; color: #7A5A00; }
+.acuerdo-dudas { background: #FFD8C2; color: #8A3200; }
+:root[data-theme="dark"] .acuerdo-si { background: #1E4620; color: #A5D6A7; }
+:root[data-theme="dark"] .acuerdo-algo { background: #4A3C0A; color: #FFE082; }
+:root[data-theme="dark"] .acuerdo-dudas { background: #5A2A10; color: #FFAB91; }
 .chip { display: inline-block; min-width: 3.2em; padding: 0.1rem 0.4rem; border-radius: 4px; text-align: center; font-weight: 500; }
 .chip.t0 { background: var(--t0); } .chip.t1 { background: var(--t1); } .chip.t2 { background: var(--t2); }
 .chip.t3 { background: var(--t3); } .chip.t4 { background: var(--t4); } .chip.t5 { background: var(--t5); }
@@ -320,4 +343,7 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
     .tabla-dias thead small, .tabla-dias tbody th small { display: block; }
     .tabla-dias .solo-escritorio { display: none; }
     .chip { min-width: 2.6em; padding: 0.1rem 0.2rem; }
+    .tabla-modelos { font-size: 0.75rem; }
+    .tabla-modelos th, .tabla-modelos td { padding: 0.3rem 0.2rem; }
+    .tabla-modelos .solo-escritorio { display: none; }
 }
