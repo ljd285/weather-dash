@@ -2188,7 +2188,8 @@ def construir_bloque_acierto(verif, reales, hoy, desde=None):
         cuando = f" desde el {desde.day} de {NOMBRES_MES[desde.month]}" if desde is not None else ""
         return ('<p class="aviso">Aún no hay días que comparar: las previsiones se guardan'
                 f'{cuando} y cada día se comparan con lo que mide la estación. '
-                'Los primeros resultados aparecen al día siguiente.</p>')
+                'Los primeros resultados aparecen cuando termina el primer día previsto, '
+                'unos dos días después de empezar.</p>')
 
     def media(serie):
         serie = serie.dropna()
