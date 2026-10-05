@@ -761,6 +761,86 @@ def obtener_temperatura_mar(lat, lon):
     }
 
 
+# --- Otros modelos (Open-Meteo) -------------------------------------------
+
+URL_MODELOS = "https://api.open-meteo.com/v1/forecast"
+#: Modelos de otros servicios meteorológicos públicos que se comparan con
+#: AEMET: (código en Open-Meteo, nombre, organismo).
+MODELOS = [
+    ("ecmwf_ifs025", "ECMWF", "Centro Europeo"),
+    ("icon_seamless", "ICON", "Alemania (DWD)"),
+    ("meteofrance_seamless", "Météo-France", "Francia (AROME/ARPEGE)"),
+    ("gfs_seamless", "GFS", "EE. UU. (NOAA)"),
+]
+VARIABLES_MODELOS = {"temperature_2m_max": "tmax", "temperature_2m_min": "tmin", "precipitation_sum": "prec"}
+#: Lluvia (mm) a partir de la que se considera que un modelo «da lluvia».
+LLUVIA_MODELO = 1
+
+
+def obtener_modelos(lat, lon, dias=7):
+    """Predicción diaria (máxima, mínima, lluvia) de cada modelo de MODELOS
+    para un punto, en una sola petición a Open-Meteo (gratuito, sin clave).
+    Devuelve la respuesta tal cual."""
+    resp = requests.get(URL_MODELOS, params={
+        "latitude": lat, "longitude": lon, "daily": ",".join(VARIABLES_MODELOS),
+        "models": ",".join(codigo for codigo, _, _ in MODELOS),
+        "forecast_days": dias, "timezone": "Europe/Madrid",
+    }, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def modelos_a_dataframe(crudo):
+    """Respuesta de obtener_modelos -> DataFrame (fecha, modelo, tmax, tmin,
+    prec), sin las filas de un modelo que no trae ningún dato."""
+    diario = (crudo or {}).get("daily", {})
+    fechas = pd.to_datetime(diario.get("time", []))
+    tablas = []
+    for codigo, nombre, _ in MODELOS:
+        tabla = pd.DataFrame({"fecha": fechas, "modelo": nombre})
+        for variable, columna in VARIABLES_MODELOS.items():
+            valores = diario.get(f"{variable}_{codigo}", [None] * len(fechas))
+            tabla[columna] = pd.to_numeric(pd.Series(valores, dtype="object"), errors="coerce").values
+        tablas.append(tabla.dropna(subset=list(VARIABLES_MODELOS.values()), how="all"))
+    if not tablas or all(t.empty for t in tablas):
+        return pd.DataFrame(columns=["fecha", "modelo", *VARIABLES_MODELOS.values()])
+    return pd.concat([t for t in tablas if not t.empty], ignore_index=True)
+
+
+def acuerdo_modelos(df_pred, df_modelos):
+    """Para cada día de la predicción de AEMET, cuánto coinciden los modelos
+    (AEMET incluida en las temperaturas; solo los demás en la lluvia, porque
+    AEMET da probabilidad y no mm). Devuelve una lista de dicts con fecha,
+    rangos de máxima y mínima, lluvias de los modelos y el nivel de acuerdo:
+    "si" (coinciden), "algo" (alguna duda) o "dudas"."""
+    if df_pred.empty or df_modelos.empty:
+        return []
+    dias = []
+    for fila in df_pred.itertuples():
+        del_dia = df_modelos[df_modelos["fecha"] == fila.fecha]
+        if del_dia.empty:
+            continue
+        maximas = [v for v in [fila.tmax, *del_dia["tmax"]] if pd.notna(v)]
+        minimas = [v for v in [fila.tmin, *del_dia["tmin"]] if pd.notna(v)]
+        lluvias = [v for v in del_dia["prec"] if pd.notna(v)]
+        con_lluvia = [v for v in lluvias if v >= LLUVIA_MODELO]
+        separacion = max((max(v) - min(v)) for v in (maximas, minimas) if v) if maximas or minimas else 0
+        lluvia_dividida = 0 < len(con_lluvia) < len(lluvias)
+        if separacion >= 5 or (lluvia_dividida and max(con_lluvia) >= 5):
+            nivel = "dudas"
+        elif separacion >= 3 or lluvia_dividida:
+            nivel = "algo"
+        else:
+            nivel = "si"
+        dias.append({
+            "fecha": fila.fecha, "nivel": nivel,
+            "tmax": (min(maximas), max(maximas)) if maximas else None,
+            "tmin": (min(minimas), max(minimas)) if minimas else None,
+            "con_lluvia": con_lluvia, "modelos_lluvia": len(lluvias),
+        })
+    return dias
+
+
 # --- Boya de Puertos del Estado (Portus) ----------------------------------
 
 URL_BOYA = "https://poem.puertos.es/portus/StationData"
@@ -1808,6 +1888,158 @@ def construir_tarjetas_pronostico(df, extremos=None):
             + "</div>"
         )
     return f'<div class="dias-pronostico">{"".join(tarjetas)}</div>'
+
+
+ETIQUETAS_ACUERDO = {"si": "Coinciden", "algo": "Alguna duda", "dudas": "Hay dudas"}
+#: Color de cada modelo en el gráfico de abanico (AEMET, en el azul de la sección).
+COLORES_MODELOS = {"AEMET": "#1565C0", "ECMWF": "#8E24AA", "ICON": "#00897B", "Météo-France": "#E65100", "GFS": "#6D4C41"}
+
+
+def _nombre_dia_corto(fecha, hoy):
+    """Como en las tarjetas: Hoy, Mañana, Mié 7..."""
+    dias = (fecha - hoy).days
+    return "Hoy" if dias == 0 else "Mañana" if dias == 1 else f"{DIAS_SEMANA[fecha.weekday()].capitalize()} {fecha.day}"
+
+
+def _unir_es(partes):
+    """["a", "b", "c"] -> "a, b y c"."""
+    return partes[0] if len(partes) == 1 else ", ".join(partes[:-1]) + " y " + partes[-1]
+
+
+def _rango_mm(valores):
+    a, b = min(valores), max(valores)
+    return f"{a:.0f} mm" if round(a) == round(b) else f"{a:.0f}–{b:.0f} mm"
+
+
+def resumen_modelos(acuerdo, hoy=None):
+    """Frase con lo que dicen los modelos: qué días coinciden y, en los que
+    no, en qué difieren (temperatura o lluvia)."""
+    if not acuerdo:
+        return ""
+    hoy = hoy if hoy is not None else pd.Timestamp(datetime.now(ZONA_HORARIA).date())
+    if all(d["nivel"] == "si" for d in acuerdo):
+        return "Los modelos coinciden todos los días."
+    frases = []
+    coinciden = [_nombre_dia(d["fecha"], hoy) for d in acuerdo if d["nivel"] == "si"]
+    if coinciden:
+        frases.append(f"Coinciden {_unir_es(coinciden)}.")
+    for d in acuerdo:
+        if d["nivel"] == "si":
+            continue
+        detalles = []
+        for clave, palabra in (("tmax", "máxima"), ("tmin", "mínima")):
+            if d[clave] and d[clave][1] - d[clave][0] >= 3:
+                detalles.append(f"{palabra} entre {d[clave][0]:.0f}° y {d[clave][1]:.0f}°")
+        if 0 < len(d["con_lluvia"]) < d["modelos_lluvia"]:
+            detalles.append(f"{len(d['con_lluvia'])} de {d['modelos_lluvia']} modelos dan lluvia ({_rango_mm(d['con_lluvia'])})")
+        texto = f"{ETIQUETAS_ACUERDO[d['nivel']]} {_nombre_dia(d['fecha'], hoy)}"
+        frases.append(f"{texto}: {'; '.join(detalles)}." if detalles else f"{texto}.")
+    return " ".join(frases)
+
+
+def _chip_temperatura(t):
+    claro = t < 8 or t >= 36  # en los extremos de la escala el fondo es oscuro
+    return (f'<span class="chip-temp" style="background:{color_temperatura(t)};'
+            f'color:{"#FFFFFF" if claro else "#1A1A1A"}">{t:.0f}°</span>')
+
+
+def construir_tabla_modelos(df_pred, df_modelos, acuerdo, hoy=None):
+    """Tabla «Comparar modelos»: una fila por modelo (AEMET la primera) y
+    una columna por día, con máxima / mínima y, debajo, la lluvia (AEMET da
+    probabilidad; los demás, mm). La última fila, el acuerdo de cada día."""
+    if not acuerdo:
+        return ""
+    hoy = hoy if hoy is not None else pd.Timestamp(datetime.now(ZONA_HORARIA).date())
+    fechas = [d["fecha"] for d in acuerdo]
+    cabecera = "".join(f"<th>{_nombre_dia_corto(f, hoy)}</th>" for f in fechas)
+
+    def celda(tmax, tmin, abajo):
+        if pd.isna(tmax) and pd.isna(tmin):
+            return '<td class="sin-dato">–</td>'
+        temps = (_chip_temperatura(tmax) if pd.notna(tmax) else "–") + (f"/{tmin:.0f}°" if pd.notna(tmin) else "")
+        return f"<td>{temps}<small>{abajo}</small></td>"
+
+    filas = []
+    aemet = df_pred.set_index("fecha")
+    celdas = []
+    for f in fechas:
+        prob = aemet.at[f, "prob_precip"] if "prob_precip" in aemet.columns else None
+        celdas.append(celda(aemet.at[f, "tmax"], aemet.at[f, "tmin"], f"{prob:.0f} %" if pd.notna(prob) else "–"))
+    filas.append(f'<tr class="fila-aemet"><th>AEMET<small class="solo-escritorio">España</small></th>{"".join(celdas)}</tr>')
+    for _, nombre, organismo in MODELOS:
+        del_modelo = df_modelos[df_modelos["modelo"] == nombre].set_index("fecha")
+        if del_modelo.empty:
+            continue
+        celdas = []
+        for f in fechas:
+            if f not in del_modelo.index:
+                celdas.append('<td class="sin-dato">–</td>')
+                continue
+            mm = del_modelo.at[f, "prec"]
+            if pd.isna(mm):
+                lluvia = "–"
+            elif mm < LLUVIA_MODELO:
+                lluvia = "sin lluvia" if mm < 0.05 else "&lt; 1 mm"
+            else:
+                lluvia = f'<span class="chip q{_clase(mm, CLASES_LLUVIA_DIA)}">{_es(mm, 0)} mm</span>'
+            celdas.append(celda(del_modelo.at[f, "tmax"], del_modelo.at[f, "tmin"], lluvia))
+        filas.append(f'<tr><th>{html.escape(nombre)}<small class="solo-escritorio">{html.escape(organismo)}</small></th>{"".join(celdas)}</tr>')
+    pie = "".join(f'<td><span class="acuerdo acuerdo-{d["nivel"]}">{ETIQUETAS_ACUERDO[d["nivel"]]}</span></td>' for d in acuerdo)
+    return (
+        f'<div class="scroll-tabla"><table class="tabla-modelos"><thead><tr><th></th>{cabecera}</tr></thead>'
+        f'<tbody>{"".join(filas)}</tbody><tfoot><tr><th>Acuerdo</th>{pie}</tr></tfoot></table></div>'
+    )
+
+
+def construir_graficos_modelos(df_pred, df_modelos):
+    """Gráfico de abanico: máxima y mínima de cada modelo (AEMET, más
+    gruesa) con la franja entre el más alto y el más bajo sombreada
+    (estrecha: coinciden; ancha: dudas); y la lluvia de cada modelo."""
+    if df_pred.empty or df_modelos.empty:
+        return []
+    fechas = df_pred["fecha"]
+    df_modelos = df_modelos[df_modelos["fecha"].isin(fechas)]
+    series = {"AEMET": df_pred.set_index("fecha")[["tmax", "tmin"]]}
+    for _, nombre, _ in MODELOS:
+        del_modelo = df_modelos[df_modelos["modelo"] == nombre].set_index("fecha")
+        if not del_modelo.empty:
+            series[nombre] = del_modelo.reindex(fechas)[["tmax", "tmin", "prec"]]
+    layout_comun = dict(template="plotly_white", height=340, margin=dict(t=50, b=40, l=50, r=20))
+    graficos = []
+
+    fig = go.Figure()
+    for columna, relleno in (("tmax", "rgba(244,81,30,0.18)"), ("tmin", "rgba(30,136,229,0.18)")):
+        tabla = pd.concat({n: s[columna] for n, s in series.items()}, axis=1)
+        fig.add_trace(go.Scatter(x=tabla.index, y=tabla.max(axis=1), mode="lines", line=dict(width=0),
+                                 showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=tabla.index, y=tabla.min(axis=1), mode="lines", line=dict(width=0),
+                                 fill="tonexty", fillcolor=relleno, showlegend=False, hoverinfo="skip"))
+    for nombre, s in series.items():
+        ancho = 3 if nombre == "AEMET" else 1.5
+        for columna, palabra in (("tmax", "máx."), ("tmin", "mín.")):
+            fig.add_trace(go.Scatter(
+                x=s.index, y=s[columna], name=nombre, legendgroup=nombre, showlegend=columna == "tmax",
+                mode="lines+markers", marker=dict(size=5 if nombre == "AEMET" else 3),
+                line=dict(color=COLORES_MODELOS[nombre], width=ancho),
+                hovertemplate=f"{nombre} {palabra}: %{{y:.0f}} °C<extra></extra>",
+            ))
+    fig.update_xaxes(tickformat="%a %-d", hoverformat="%A %-d de %B")
+    fig.update_yaxes(range=_rango_eje([df_pred["tmax"], df_pred["tmin"], df_modelos["tmax"], df_modelos["tmin"]], 10, 35, 2), title="°C")
+    fig.update_layout(title="Máxima y mínima según cada modelo", hovermode="x unified",
+                      legend=dict(orientation="h", y=-0.2), **layout_comun)
+    graficos.append(_html_grafico(fig))
+
+    fig = go.Figure()
+    for nombre, s in series.items():
+        if "prec" in s.columns:
+            fig.add_trace(go.Bar(x=s.index, y=s["prec"], name=nombre, marker_color=COLORES_MODELOS[nombre],
+                                 hovertemplate=f"{nombre}: %{{y:.1f}} mm<extra></extra>"))
+    fig.update_xaxes(tickformat="%a %-d", hoverformat="%A %-d de %B")
+    fig.update_yaxes(range=_rango_eje([df_modelos["prec"]], 0, 10, 2), title="mm")
+    fig.update_layout(title="Lluvia según cada modelo", barmode="group", hovermode="x unified",
+                      legend=dict(orientation="h", y=-0.2), **layout_comun)
+    graficos.append(_html_grafico(fig))
+    return graficos
 
 
 def construir_graficos_prediccion(df):
@@ -3117,6 +3349,25 @@ def main():
         if pred_horaria:
             df_horas, noches = prediccion_horaria_a_dataframe(pred_horaria)
 
+        # Otros modelos (Open-Meteo), con la misma reserva.
+        df_modelos = pd.DataFrame()
+        if estacion.get("lat") is not None and estacion.get("lon") is not None:
+            clave_modelos = f"modelos_{estacion['lat']:.2f}_{estacion['lon']:.2f}"
+            crudo_modelos = None
+            try:
+                crudo_modelos = obtener_modelos(estacion["lat"], estacion["lon"])
+                if modelos_a_dataframe(crudo_modelos).empty:
+                    print(f"Aviso: la predicción de otros modelos para {nombre} salió vacía.")
+                    crudo_modelos = None
+                else:
+                    _guardar_ultimo(clave_modelos, crudo_modelos)
+            except Exception as exc:
+                print(f"Aviso: no se pudo obtener la predicción de otros modelos para {nombre}: {exc}")
+            if crudo_modelos is None:
+                crudo_modelos, _ = _leer_ultimo(clave_modelos)
+            if crudo_modelos:
+                df_modelos = modelos_a_dataframe(crudo_modelos)
+
         # Récords de la estación (caché mensual).
         extremos = {}
         try:
@@ -3217,6 +3468,17 @@ def main():
             seccion.extend(graficos_horas)
             seccion.append('</div>')
             seccion.append('<p class="aviso">La franja sombreada es la noche. Las líneas discontinuas son previsión.</p></details>')
+        acuerdo = acuerdo_modelos(df_pred, df_modelos)
+        if acuerdo:
+            seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Comparar modelos</summary>')
+            seccion.append(f'<p class="resumen-modelos">{html.escape(resumen_modelos(acuerdo))}</p>')
+            seccion.append(construir_tabla_modelos(df_pred, df_modelos, acuerdo))
+            seccion.append('<div class="graficos-apilados">')
+            seccion.extend(construir_graficos_modelos(df_pred, df_modelos))
+            seccion.append('</div><p class="aviso">Predicción de AEMET y de los modelos de otros servicios meteorológicos '
+                           'públicos (vía Open-Meteo) para el punto de la estación. Coinciden: las temperaturas no se separan '
+                           'más de 2°; alguna duda: 3–4° o solo algunos modelos dan lluvia; hay dudas: 5° o más, o lluvia de '
+                           '5 mm o más que no dan todos. La franja sombreada va del modelo más alto al más bajo.</p></details>')
         seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Gráficos de los 7 días</summary>')
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_prediccion(df_pred))
