@@ -317,3 +317,20 @@ if ("serviceWorker" in navigator) {
         });
     });
 }
+
+// ¿Cuánto aciertan?: botones de antelación (1, 3 o 5 días antes).
+document.querySelectorAll('.bloque-acierto').forEach(function(bloque) {
+    var botones = bloque.querySelectorAll('.boton-plazo');
+    botones.forEach(function(boton) {
+        boton.addEventListener('click', function() {
+            botones.forEach(function(b) {
+                var activo = b === boton;
+                b.classList.toggle('activo', activo);
+                b.setAttribute('aria-pressed', activo ? 'true' : 'false');
+            });
+            bloque.querySelectorAll('.vista-plazo').forEach(function(v) {
+                v.hidden = v.getAttribute('data-plazo') !== boton.getAttribute('data-plazo');
+            });
+        });
+    });
+});

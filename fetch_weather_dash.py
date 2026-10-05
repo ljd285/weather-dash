@@ -1906,7 +1906,7 @@ def construir_tarjetas_pronostico(df, extremos=None):
 
 ETIQUETAS_ACUERDO = {"si": "Coinciden", "algo": "Alguna duda", "dudas": "Hay dudas"}
 #: Color de cada modelo en el gráfico de abanico (AEMET, en el azul de la sección).
-COLORES_MODELOS = {"AEMET": "#1565C0", "ECMWF": "#8E24AA", "ICON": "#00897B", "Météo-France": "#E65100", "GFS": "#6D4C41"}
+COLORES_MODELOS = {"AEMET": "#1E63C4", "ECMWF": "#F57C00", "ICON": "#E8B500", "Météo-France": "#D32F2F", "GFS": "#2E9E44"}
 
 
 def _nombre_dia_corto(fecha, hoy):
@@ -2055,6 +2055,231 @@ def construir_graficos_modelos(df_pred, df_modelos):
                       legend=dict(orientation="h", y=-0.2), **layout_comun)
     graficos.append(_html_grafico(fig))
     return graficos
+
+
+# --- ¿Cuánto aciertan? -----------------------------------------------------
+# Cada día se guarda lo que dice cada fuente (AEMET y los modelos) para los
+# próximos días, en data/previsiones_<idema>.csv (se sube al repositorio con
+# la caché del histórico), y se compara con lo que midió la estación.
+
+FUENTES_PREVISION = ["AEMET", *(nombre for _, nombre, _ in MODELOS)]
+ANTELACIONES = range(1, 7)  # días entre la previsión y el día previsto
+PLAZOS_ACIERTO = (1, 3, 5)  # los que se pueden elegir en el resumen
+DIAS_ACIERTO = 30  # días que entran en el resumen
+DIAS_ARCHIVO = 75  # se conservan algo más, por si los datos validados se retrasan
+PROB_LLUVIA_SI = 50  # % a partir del cual AEMET «dice» que lloverá
+COLUMNAS_PREVISIONES = ["emitida", "fuente", "fecha", "antelacion", "tmax", "tmin", "lluvia"]
+
+
+def _ruta_previsiones(idema):
+    return os.path.join(CACHE_DIR, f"previsiones_{idema}.csv")
+
+
+def previsiones_del_dia(df_pred, df_modelos, hoy):
+    """Lo que dice cada fuente hoy para los próximos días (antelación 1-6):
+    máxima, mínima y lluvia (probabilidad en % para AEMET; mm para los
+    modelos). Las fuentes que no se hayan podido descargar hoy no se pasan."""
+    filas = []
+    for df, fuente_fija, col_lluvia in ((df_pred, "AEMET", "prob_precip"), (df_modelos, None, "prec")):
+        if df is None or df.empty:
+            continue
+        for fila in df.itertuples():
+            antelacion = (fila.fecha - hoy).days
+            if antelacion not in ANTELACIONES:
+                continue
+            filas.append({
+                "emitida": hoy, "fuente": fuente_fija or fila.modelo, "fecha": fila.fecha, "antelacion": antelacion,
+                "tmax": fila.tmax, "tmin": fila.tmin, "lluvia": getattr(fila, col_lluvia, None),
+            })
+    return pd.DataFrame(filas, columns=COLUMNAS_PREVISIONES)
+
+
+def leer_previsiones(idema):
+    ruta = _ruta_previsiones(idema)
+    if not os.path.exists(ruta):
+        return pd.DataFrame(columns=COLUMNAS_PREVISIONES)
+    return pd.read_csv(ruta, parse_dates=["emitida", "fecha"])
+
+
+def archivar_previsiones(idema, nuevas, hoy):
+    """Añade al archivo las previsiones de hoy que no estuvieran ya: se
+    guarda la primera de cada día, así el archivo cambia una vez al día y
+    no en cada ejecución. Devuelve el archivo completo."""
+    archivo = leer_previsiones(idema)
+    if not nuevas.empty:
+        ya = set(zip(archivo["emitida"], archivo["fuente"], archivo["fecha"], strict=True))
+        nuevas = nuevas[[(e, f, d) not in ya for e, f, d in zip(nuevas["emitida"], nuevas["fuente"], nuevas["fecha"], strict=True)]]
+        if not nuevas.empty:
+            archivo = pd.concat([archivo, nuevas], ignore_index=True) if not archivo.empty else nuevas.copy()
+            archivo = archivo[archivo["fecha"] >= hoy - pd.Timedelta(days=DIAS_ARCHIVO)]
+            archivo = archivo.sort_values(["emitida", "fuente", "fecha"]).reset_index(drop=True)
+            try:
+                os.makedirs(CACHE_DIR, exist_ok=True)
+                archivo.to_csv(_ruta_previsiones(idema), index=False, date_format="%Y-%m-%d", float_format="%.1f")
+            except OSError as exc:
+                print(f"Aviso: no se pudo guardar el archivo de previsiones de {idema}: {exc}")
+    return archivo
+
+
+def dias_reales(df_hist_completo, df_provisional):
+    """Lo medido cada día por la estación: los datos diarios validados de
+    AEMET y, para los días que aún no tienen, los calculados con las
+    lecturas horarias."""
+    partes = [d[[c for c in ("fecha", "tmax", "tmin", "prec") if c in d.columns]]
+              for d in (df_hist_completo, df_provisional) if d is not None and not d.empty]
+    if not partes:
+        return pd.DataFrame(columns=["fecha", "tmax", "tmin", "prec"])
+    reales = pd.concat(partes, ignore_index=True).drop_duplicates("fecha", keep="first")
+    return reales.sort_values("fecha").reset_index(drop=True)
+
+
+def verificar_previsiones(archivo, reales, hoy):
+    """Une cada previsión archivada con lo medido ese día: error de máxima y
+    mínima (previsto - real) y si acertó si llovería (llovió = ≥ 1 mm)."""
+    if archivo.empty or reales.empty:
+        return pd.DataFrame()
+    df = archivo[archivo["fecha"] < hoy].merge(reales, on="fecha", how="inner", suffixes=("", "_real"))
+    if df.empty:
+        return df
+    df["err_tmax"] = df["tmax"] - df["tmax_real"]
+    df["err_tmin"] = df["tmin"] - df["tmin_real"]
+    umbral = df["fuente"].map(lambda f: PROB_LLUVIA_SI if f == "AEMET" else LLUVIA_MODELO)
+    dice = df["lluvia"] >= umbral
+    llovio = df["prec"] >= LLUVIA_MODELO
+    valido = df["lluvia"].notna() & df["prec"].notna()
+    df["dice_lluvia"] = dice.where(df["lluvia"].notna())
+    df["acierto_lluvia"] = (dice == llovio).where(valido)
+    return df
+
+
+def _clase_error(e):
+    return 0 if abs(e) < 1.5 else 1 if abs(e) < 2.5 else 2
+
+
+def _spark_error(errores, color):
+    """Mini línea del error medio de la máxima según la antelación (1-6 días)."""
+    puntos = [(4 + 82 * (k - 1) / 5, v) for k, v in errores if v is not None]
+    if len(puntos) < 2:
+        return ""
+    tope = max(3.5, max(v for _, v in puntos))
+    puntos = [(x, 22 - 18 * v / tope) for x, v in puntos]
+    return ('<svg class="spark-acierto" viewBox="0 0 90 24" aria-hidden="true"><polyline points="'
+            + " ".join(f"{x:.0f},{y:.0f}" for x, y in puntos)
+            + f'" fill="none" stroke="{color}" stroke-width="2"/>'
+            + "".join(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="2.5" fill="{color}"/>' for x, y in (puntos[0], puntos[-1]))
+            + "</svg>")
+
+
+def _nombre_fuente(fuente):
+    """En el móvil, «Météo-France» se acorta a «Météo»."""
+    nombre = 'Météo<span class="solo-escritorio-inline">-France</span>' if fuente == "Météo-France" else html.escape(fuente)
+    return f'<span class="fuente-acierto"><i style="background:{COLORES_MODELOS[fuente]}"></i><span>{nombre}</span></span>'
+
+
+def construir_bloque_acierto(verif, reales, hoy, desde=None):
+    """Bloque «¿Cuánto aciertan?»: resumen de los últimos DIAS_ACIERTO días
+    (error medio de máxima y mínima, su tendencia, % de aciertos de lluvia y
+    cómo crece el error con la antelación), con botones para la previsión
+    hecha 1, 3 o 5 días antes; y la última semana día a día (la previsión
+    de la víspera). Las fuentes, siempre en el mismo orden."""
+    inicio = hoy - pd.Timedelta(days=DIAS_ACIERTO)
+    recientes = verif[verif["fecha"] >= inicio] if not verif.empty else verif
+    if recientes.empty:
+        cuando = f" desde el {desde.day} de {NOMBRES_MES[desde.month]}" if desde is not None else ""
+        return ('<p class="aviso">Aún no hay días que comparar: las previsiones se guardan'
+                f'{cuando} y cada día se comparan con lo que mide la estación. '
+                'Los primeros resultados aparecen al día siguiente.</p>')
+
+    def media(serie):
+        serie = serie.dropna()
+        return serie.mean() if len(serie) else None
+
+    def signo(v):
+        return f"{'+' if v >= 0 else '−'}{_es(abs(v))}"
+
+    def celda_temp(sub, col):
+        error = media(sub[col].abs())
+        if error is None:
+            return "<td>–</td>"
+        return f'<td class="valor-acierto">±{_es(error)}°<small>{signo(media(sub[col]))}</small></td>'
+
+    botones, tablas = [], []
+    for plazo in PLAZOS_ACIERTO:
+        del_plazo = recientes[recientes["antelacion"] == plazo]
+        filas = []
+        for fuente in FUENTES_PREVISION:
+            sub = del_plazo[del_plazo["fuente"] == fuente]
+            aciertos = sub["acierto_lluvia"].dropna()
+            lluvia = "<td>–</td>"
+            if len(aciertos):
+                pct = 100 * aciertos.astype(float).mean()
+                lluvia = (f'<td><span class="lluvia-acierto"><b>{pct:.0f} %</b><span class="barra-acierto solo-escritorio">'
+                          f'<span style="width:{pct:.0f}%"></span></span></span></td>')
+            por_antelacion = []
+            for k in ANTELACIONES:
+                e = media(recientes[(recientes["fuente"] == fuente) & (recientes["antelacion"] == k)]["err_tmax"].abs())
+                por_antelacion.append((k, e))
+            validos = [e for _, e in por_antelacion if e is not None]
+            spark = _spark_error(por_antelacion, COLORES_MODELOS[fuente])
+            extremos = f"<small>{_es(validos[0])}° → {_es(validos[-1])}°</small>" if len(validos) >= 2 else ""
+            filas.append(f"<tr><th>{_nombre_fuente(fuente)}</th>{celda_temp(sub, 'err_tmax')}{celda_temp(sub, 'err_tmin')}"
+                         f'{lluvia}<td class="solo-escritorio">{spark}{extremos}</td></tr>')
+        dias = del_plazo["fecha"].nunique()
+        texto = "1 día antes" if plazo == 1 else f"{plazo} días"
+        activo = plazo == PLAZOS_ACIERTO[0]
+        botones.append(f'<button type="button" class="boton-plazo{" activo" if activo else ""}" data-plazo="{plazo}" '
+                       f'aria-pressed="{"true" if activo else "false"}">{texto}</button>')
+        tablas.append(
+            f'<div class="vista-plazo" data-plazo="{plazo}"{"" if activo else " hidden"}><div class="scroll-tabla"><table class="tabla-acierto">'
+            '<thead><tr><th></th><th>Máxima</th><th>Mínima</th><th>Lluvia<span class="solo-escritorio-inline"> sí/no</span></th>'
+            '<th class="solo-escritorio">Error de la máxima<br>de 1 a 6 días antes</th></tr></thead>'
+            f'<tbody>{"".join(filas)}</tbody></table></div><p class="nota-acierto">{dias} día{"s" if dias != 1 else ""} con dato en los '
+            f'últimos {DIAS_ACIERTO}. «±0,9°»: lo que falla de media; el número pequeño, si tiende a pasarse (+) o quedarse corta (−).</p></div>'
+        )
+
+    # Última semana, día a día (previsión de la víspera).
+    semana = [hoy - pd.Timedelta(days=d) for d in range(7, 0, -1)]
+    vispera = verif[verif["antelacion"] == 1].set_index(["fuente", "fecha"]) if not verif.empty else pd.DataFrame()
+    reales_idx = reales.set_index("fecha")
+    cab, fila_real = [], []
+    for dia in semana:
+        cab.append(f"<th>{'LMXJVSD'[dia.weekday()]} {dia.day}</th>")
+        if dia in reales_idx.index:
+            r = reales_idx.loc[dia]
+            icono = "" if pd.isna(r.get("prec")) else ("🌧️" if r["prec"] >= LLUVIA_MODELO else "☀️")
+            temps = "/".join(f"{v:.0f}°" for v in (r["tmax"], r["tmin"]) if pd.notna(v))
+            fila_real.append(f'<td><b>{temps}</b><br>{icono}</td>')
+        else:
+            fila_real.append("<td>–</td>")
+    filas = [f'<tr class="fila-real"><th>Real</th>{"".join(fila_real)}</tr>']
+    for fuente in FUENTES_PREVISION:
+        celdas = []
+        for dia in semana:
+            if (fuente, dia) not in vispera.index:
+                celdas.append("<td></td>")
+                continue
+            v = vispera.loc[(fuente, dia)]
+            cuadros = "".join(
+                f'<s class="e{_clase_error(v[col])}"></s>' if pd.notna(v[col]) else "<s></s>" for col in ("err_tmax", "err_tmin"))
+            lluvia = ""
+            if pd.notna(v["acierto_lluvia"]):
+                lluvia = '<b class="ok">✓</b>' if v["acierto_lluvia"] else '<b class="ko">✗</b>'
+            previsto = "/".join(f"{x:.0f}°" for x in (v["tmax"], v["tmin"]) if pd.notna(x))
+            dijo = "" if pd.isna(v["dice_lluvia"]) else (", con lluvia" if v["dice_lluvia"] else ", sin lluvia")
+            celdas.append(f'<td title="Previsto la víspera: {previsto}{dijo}"><span class="dia-acierto">{cuadros}{lluvia}</span></td>')
+        filas.append(f"<tr><th>{_nombre_fuente(fuente)}</th>{''.join(celdas)}</tr>")
+    tabla_semana = (
+        f'<div class="scroll-tabla"><table class="tabla-acierto tabla-semana-acierto"><thead><tr><th></th>{"".join(cab)}</tr></thead>'
+        f'<tbody>{"".join(filas)}</tbody></table></div>'
+        '<p class="nota-acierto leyenda-acierto">Cuadros: máxima y mínima previstas la víspera — <span><s class="e0"></s>falló ≤ 1°</span>'
+        '<span><s class="e1"></s>2°</span><span><s class="e2"></s>≥ 3°</span> · ✓/✗: acertó si llovería. '
+        f'Lluvia: AEMET «dice sí» con ≥ {PROB_LLUVIA_SI} % y los modelos con ≥ {LLUVIA_MODELO} mm; llovió = ≥ {LLUVIA_MODELO} mm.</p>'
+    )
+    return (
+        '<div class="bloque-acierto"><p class="intro-acierto">Lo previsto por cada fuente frente a lo que midió la estación.</p>'
+        f'<div class="botones-plazo">Previsión hecha {"".join(botones)}</div>{"".join(tablas)}'
+        f'<p class="subtitulo-acierto">Última semana, día a día</p>{tabla_semana}</div>'
+    )
 
 
 def construir_graficos_prediccion(df):
@@ -3331,6 +3556,7 @@ def main():
                 _guardar_ultimo(f"prediccion_{municipio}", prediccion)
         except Exception as exc:
             print(f"Aviso: no se pudo obtener la predicción de {nombre}: {exc}")
+        prediccion_fresca = prediccion is not None
         if prediccion is None:
             prediccion, guardado = _leer_ultimo(f"prediccion_{municipio}")
             if prediccion:
@@ -3366,6 +3592,7 @@ def main():
 
         # Otros modelos (Open-Meteo), con la misma reserva.
         df_modelos = pd.DataFrame()
+        modelos_frescos = False
         if estacion.get("lat") is not None and estacion.get("lon") is not None:
             clave_modelos = f"modelos_{estacion['lat']:.2f}_{estacion['lon']:.2f}"
             crudo_modelos = None
@@ -3378,10 +3605,20 @@ def main():
                     _guardar_ultimo(clave_modelos, crudo_modelos)
             except Exception as exc:
                 print(f"Aviso: no se pudo obtener la predicción de otros modelos para {nombre}: {exc}")
+            modelos_frescos = crudo_modelos is not None
             if crudo_modelos is None:
                 crudo_modelos, _ = _leer_ultimo(clave_modelos)
             if crudo_modelos:
                 df_modelos = modelos_a_dataframe(crudo_modelos)
+
+        # Archivo de previsiones para «¿Cuánto aciertan?»: solo lo descargado
+        # hoy (una copia de reserva antigua no es la previsión de hoy).
+        archivo_previsiones = pd.DataFrame()
+        if idema:
+            hoy_local = pd.Timestamp(datetime.now(ZONA_HORARIA).date())
+            nuevas = previsiones_del_dia(df_pred if prediccion_fresca else pd.DataFrame(),
+                                         df_modelos if modelos_frescos else pd.DataFrame(), hoy_local)
+            archivo_previsiones = archivar_previsiones(idema, nuevas, hoy_local)
 
         # Récords de la estación (caché mensual).
         extremos = {}
@@ -3499,6 +3736,17 @@ def main():
         seccion.append('<div class="graficos-apilados">')
         seccion.extend(construir_graficos_prediccion(df_pred))
         seccion.append('</div></details>')
+        df_provisional = pd.DataFrame()
+        if not df_hist_completo.empty:
+            df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
+        if idema:
+            hoy_local = pd.Timestamp(datetime.now(ZONA_HORARIA).date())
+            reales = dias_reales(df_hist_completo, df_provisional)
+            desde = archivo_previsiones["emitida"].min() if not archivo_previsiones.empty else hoy_local
+            seccion.append('<details class="bloque-plegable"><summary class="subtitulo">¿Cuánto aciertan?</summary>')
+            seccion.append(construir_bloque_acierto(verificar_previsiones(archivo_previsiones, reales, hoy_local),
+                                                    reales, hoy_local, desde))
+            seccion.append('</details>')
         seccion.append(CIERRE_SECCION)
 
         mes_completo = _mes_completo_mas_reciente(df_hist_completo)
@@ -3508,9 +3756,6 @@ def main():
         seccion.append(f'<section class="seccion seccion-historico" data-seccion="historico" id="{slug}-historico">')
         seccion.append(cabecera_seccion("Histórico y clima", fuente_historico,
                                         resumen_historico(df_hist_completo, mes_completo, normales)))
-        df_provisional = pd.DataFrame()
-        if not df_hist_completo.empty:
-            df_provisional = dias_provisionales(observaciones, df_hist_completo["fecha"].max())
         normales_umbral = {(v, u): climatologia.dias_por_anio(serie, v, u) for v, u, _ in UMBRALES_CALENDARIO}
         calendario = construir_calendario(datos_calendario(df_hist_completo, df_provisional), clima,
                                           extremos, normales_umbral)

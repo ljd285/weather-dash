@@ -302,6 +302,38 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
 .tabla-dias tbody th small { display: inline; }
 .tabla-dias tfoot th, .tabla-dias tfoot td { font-weight: 700; border-bottom: 0; }
 .tabla-dias .sin-lecturas { text-align: center; color: var(--texto-secundario); font-style: italic; }
+/* ¿Cuánto aciertan?: cada previsión frente a lo medido. */
+.intro-acierto { margin: 0 0 0.5rem; color: var(--texto-secundario); font-size: 0.9rem; }
+.botones-plazo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--texto-secundario); }
+.boton-plazo { border: 1px solid var(--borde); background: var(--superficie); color: var(--texto); border-radius: 999px; padding: 0.2rem 0.7rem; font-size: 0.82rem; cursor: pointer; font-family: inherit; }
+.boton-plazo.activo { background: var(--color-pronostico); color: var(--superficie); border-color: transparent; }
+.tabla-acierto { border-collapse: collapse; width: 100%; font-size: 0.9rem; background: var(--superficie); border-radius: 8px; box-shadow: 0 1px 3px var(--sombra); }
+.tabla-acierto th, .tabla-acierto td { padding: 0.4rem 0.5rem; text-align: center; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+.tabla-acierto tbody th { text-align: left; font-weight: 500; }
+.tabla-acierto thead th { font-size: 0.78rem; font-weight: 500; color: var(--texto-secundario); }
+.tabla-acierto tbody tr:last-child th, .tabla-acierto tbody tr:last-child td { border-bottom: 0; }
+.tabla-acierto small { display: block; font-size: 0.7rem; color: var(--texto-secundario); font-weight: 400; }
+.fuente-acierto { display: inline-flex; align-items: center; gap: 0.4rem; }
+.fuente-acierto i { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.valor-acierto { font-weight: 700; }
+.valor-acierto small { display: inline; margin-left: 0.2rem; }
+.lluvia-acierto { display: inline-flex; align-items: center; gap: 0.4rem; }
+.barra-acierto { width: 60px; height: 6px; border-radius: 3px; background: var(--borde); overflow: hidden; }
+.barra-acierto span { display: block; height: 100%; background: #2E7D32; }
+.spark-acierto { width: 90px; height: 24px; display: block; margin: 0 auto; }
+.nota-acierto { font-size: 0.78rem; color: var(--texto-secundario); margin: 0.4rem 0 0; }
+.subtitulo-acierto { font-weight: 500; margin: 1rem 0 0.4rem; }
+.tabla-semana-acierto .fila-real th, .tabla-semana-acierto .fila-real td { background: var(--fondo-pronostico); font-size: 0.8rem; }
+.dia-acierto { display: inline-flex; align-items: center; gap: 2px; }
+.tabla-semana-acierto td { cursor: default; }
+.tabla-semana-acierto s, .leyenda-acierto s { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--borde); text-decoration: none; }
+.leyenda-acierto span { margin-left: 0.5rem; white-space: nowrap; }
+.leyenda-acierto s { width: 11px; height: 11px; margin-right: 0.25rem; vertical-align: -1px; }
+s.e0 { background: #66BB6A; } s.e1 { background: #FFD54F; } s.e2 { background: #EF6C5A; }
+.dia-acierto b { font-size: 0.75rem; margin-left: 2px; }
+.dia-acierto .ok { color: #2E7D32; } .dia-acierto .ko { color: #C62828; }
+:root[data-theme="dark"] .dia-acierto .ok { color: #81C784; } :root[data-theme="dark"] .dia-acierto .ko { color: #EF9A9A; }
+.solo-escritorio-inline { display: inline; }
 /* Comparar modelos: AEMET frente a otros servicios meteorológicos. */
 .resumen-modelos { background: var(--fondo-pronostico); border-left: 4px solid var(--color-pronostico); border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.25rem 0 0.9rem; font-size: 0.95rem; }
 .tabla-modelos { border-collapse: collapse; width: 100%; font-size: 0.88rem; background: var(--superficie); border-radius: 8px; box-shadow: 0 1px 3px var(--sombra); margin-bottom: 1rem; }
@@ -346,4 +378,11 @@ footer { margin-top: 2rem; color: var(--texto-secundario); font-size: 0.85rem; t
     .tabla-modelos { font-size: 0.75rem; }
     .tabla-modelos th, .tabla-modelos td { padding: 0.3rem 0.2rem; }
     .tabla-modelos .solo-escritorio { display: none; }
+    .tabla-acierto { font-size: 0.78rem; }
+    .tabla-acierto th, .tabla-acierto td { padding: 0.35rem 0.2rem; }
+    .tabla-acierto .solo-escritorio, .tabla-acierto .solo-escritorio-inline { display: none; }
+    .tabla-acierto .fuente-acierto i { display: none; }
+    .tabla-semana-acierto s { width: 9px; height: 9px; }
+    .tabla-semana-acierto .fila-real td { font-size: 0.7rem; }
+    .dia-acierto { gap: 1px; }
 }
