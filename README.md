@@ -169,7 +169,7 @@ Date de alta en <https://console.cron-job.org/signup>, y en *Settings* pon la zo
 
 | | Tarea 1: dashboard | Tarea 2: avisos |
 |---|---|---|
-| **Title** | Meteo VLC – dashboard | Meteo VLC – avisos |
+| **Title** | MeteoMaclet – dashboard | MeteoMaclet – avisos |
 | **URL** | `https://api.github.com/repos/ljd285/weather-dash/actions/workflows/update_dashboard.yml/dispatches` | `https://api.github.com/repos/ljd285/weather-dash/actions/workflows/avisos.yml/dispatches` |
 | **Execution schedule** | *Custom* → minutos `50`, todas las horas, días, meses y días de la semana | *Custom* → minutos `3, 18, 33, 48`, todas las horas, días, meses y días de la semana |
 
