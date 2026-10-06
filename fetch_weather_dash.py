@@ -2998,7 +2998,8 @@ def construir_calendario(datos, clima, extremos=None, normales_umbral=None):
                 if record:
                     clases = [c for c in clases if c != "fuera"] + ["record"]
                     texto += f" · {record}"
-                if fila.get("provisional") is True:
+                provisional = fila.get("provisional")
+                if pd.notna(provisional) and bool(provisional):  # numpy.bool_, no True: «is True» no vale
                     clases.append("prov")
                     texto += " · provisional (AEMET aún no lo ha validado)"
                 texto = html.escape(texto)
