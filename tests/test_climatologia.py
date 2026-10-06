@@ -64,7 +64,7 @@ def test_descarga_reanudable(tmp_path, monkeypatch):
 
 
 def test_calendario(clima):
-    fin = pd.Timestamp("2026-07-19")  # domingo
+    fin = pd.Timestamp("2026-07-18")  # último día con dato (provisional): sin huecos, la columna es bool de numpy
     historico = pd.DataFrame({"fecha": pd.date_range("2025-07-01", "2026-07-17"), "tmax": 30.0, "tmin": 20.0, "prec": 0.0})
     historico.loc[historico["fecha"] == "2026-07-10", "tmax"] = 45.0
     provisional = pd.DataFrame({"fecha": pd.to_datetime(["2026-07-18"]), "tmax": [31.0], "tmin": [21.0], "prec": [12.0]})
@@ -78,7 +78,8 @@ def test_calendario(clima):
     assert "fuera de todo lo registrado" in html  # los 45 °C de julio
     assert "bate el récord de máxima de julio en la estación (44,0 °C, 10/07/2023)" in html
     assert "t6 u35 u40 record" in html  # la ★ sustituye al punto de «fuera»
-    assert "prov" in html and "q3" in html  # 12 mm = clase 5-15
+    assert "q3" in html  # 12 mm = clase 5-15
+    assert html.count("prov\" ") == 3 and "provisional (AEMET aún no lo ha validado)" in html  # el 18/07, en las 3 vistas
     assert "Días ≥ 35 °C: <strong>1</strong> · normal 4,2" in html  # solo los 45 °C pasan de 35
     assert "Noches tropicales (≥ 20 °C): <strong>" in html and "· normal 63" in html
     assert "Días ≥ 40 °C: <strong>1</strong></button>" in html  # sin normal: no se muestra
