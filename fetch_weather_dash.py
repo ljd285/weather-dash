@@ -63,19 +63,20 @@ LOCALE_ES_JS = """Plotly.register({
 });"""
 
 # Paleta Material Design (tonos 500, salvo donde se indica)
+# Paleta «Horta» de MeteoMaclet: naranja valenciano y verde de huerta.
 MATERIAL = {
-    "rojo": "#F44336",
-    "azul": "#2196F3",
-    "azul_claro": "#03A9F4",
-    "indigo": "#3F51B5",
-    "morado": "#673AB7",
-    "teal": "#009688",
-    "verde": "#4CAF50",
-    "gris": "#607D8B",
-    "ambar": "#FFB300",
+    "rojo": "#C2560C",
+    "azul": "#2B6CA3",
+    "azul_claro": "#5B9BD0",
+    "indigo": "#2F5D3A",
+    "morado": "#6B4F7A",
+    "teal": "#2F7A47",
+    "verde": "#6FA05A",
+    "gris": "#6B7568",
+    "ambar": "#E8A21A",
     "normal": "#8A8A8A",  # líneas de referencia; legible sobre fondo claro y oscuro
-    "fondo": "#FAFAFA",
-    "texto": "#212121",
+    "fondo": "#F7F1E6",
+    "texto": "#1F2A24",
 }
 
 

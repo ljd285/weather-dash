@@ -11,19 +11,19 @@
     } catch (e) {}
 })();
 </script>
-<title>Meteo VLC</title>
+<title>MeteoMaclet</title>
 <meta name="description" content="El tiempo en Valencia: lo que marca ahora, lo que viene y cómo va el año. Datos de AEMET y Puertos del Estado.">
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="apple-touch-icon" href="icon-192.png">
-<meta name="theme-color" content="#3F51B5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#2F5D3A" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1E1E1E" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Meteo VLC">
+<meta name="apple-mobile-web-app-title" content="MeteoMaclet">
 <script src="${plotly_js_url}"></script>
 <script>if (window.Plotly) { ${locale_es_js} }</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -35,8 +35,8 @@ ${estilos}</style>
 <div class="contenedor">
 <header class="cabecera">
 <div class="marca">
-<h1>Meteo VLC</h1>
-<p class="lema">El tiempo en Valencia · <span class="actualizado" data-generado="${generado_iso}">actualizado el ${generado_corto}</span></p>
+<div class="logo-marca"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M62 24 C68 10 84 8 92 12 C86 24 72 28 62 24 Z" fill="#2F5D3A"/><circle cx="60" cy="62" r="38" fill="#E8711A"/><rect x="18" y="70" width="84" height="5" fill="#F7F1E6"/><rect x="18" y="82" width="84" height="6" fill="#F7F1E6"/><rect x="18" y="94" width="84" height="7" fill="#F7F1E6"/><path d="M14 110 Q37 102 60 110 T106 110" fill="none" stroke="#2F5D3A" stroke-width="5" stroke-linecap="round"/></svg><h1>Meteo<span>Maclet</span></h1></div>
+<p class="lema">El temps de Benimaclet · <span class="actualizado" data-generado="${generado_iso}">actualizado el ${generado_corto}</span></p>
 </div>
 <div class="controles-cabecera">
 ${selector}

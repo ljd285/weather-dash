@@ -172,7 +172,8 @@ def test_texto_telegram_escapa_html_y_marca_el_cierre():
     ep = n.episodios([tramo("naranja", 2, 8, descripcion="Racha <90 km/h> & lluvia")], ZONA)[0]
     texto = n.texto_telegram(ep)
     assert texto.startswith("🌧️ <b>LLUVIAS</b> 🟠 <b>NARANJA</b> 🟠\n") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
-    assert texto.endswith('Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a>') and "Avisos en AEMET" not in texto
+    assert texto.endswith('Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a>'
+                              ' · 🍊 <a href="https://ljd285.github.io/weather-dash/">MeteoMaclet</a>') and "Avisos en AEMET" not in texto
     assert len(texto) < 4096
     assert n.texto_telegram(ep, cierre="retirado").startswith("🚫") and "⬜" not in n.texto_telegram(ep)
     assert "retirado" in n.texto_respuesta_telegram()

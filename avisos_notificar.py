@@ -321,6 +321,8 @@ def leer_estado(texto):
 # --- Texto de los mensajes de Telegram --------------------------------------
 
 #: Encabezado del mensaje original cuando el aviso ya no está en vigor.
+#: Página del dashboard a la que enlaza la firma de los mensajes.
+URL_DASHBOARD = "https://ljd285.github.io/weather-dash/"
 CIERRES_TELEGRAM = {"retirado": "🚫 <b>Aviso retirado por AEMET</b>", "terminado": "⌛ <b>Aviso finalizado</b>",
                     "sustituido": "🔄 <b>Aviso sustituido por uno posterior</b>"}
 MAX_DESCRIPCION_TELEGRAM = 400
@@ -362,7 +364,7 @@ def texto_telegram(episodio, cierre=None, enlace_nuevo=None):
         else:
             lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel'].capitalize()}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
                           + (f": {descripcion}" if descripcion else ""))
-    lineas += ["", 'Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a>']
+    lineas += ["", f'Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a> · 🍊 <a href="{URL_DASHBOARD}">MeteoMaclet</a>']
     marca = [CIERRES_TELEGRAM[cierre]] if cierre else []
     if cierre == "sustituido" and enlace_nuevo:
         marca = [f'🔄 <b>Aviso sustituido por <a href="{enlace_nuevo}">uno posterior</a></b>']

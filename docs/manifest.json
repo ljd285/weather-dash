@@ -1,12 +1,12 @@
 {
-  "name": "Meteo VLC",
-  "short_name": "Meteo VLC",
-  "description": "El tiempo en Valencia: lo que marca ahora, lo que viene y cómo va el año. Datos de AEMET y Puertos del Estado.",
+  "name": "MeteoMaclet",
+  "short_name": "MeteoMaclet",
+  "description": "El temps de Benimaclet: lo que marca ahora, lo que viene y cómo va el año. Datos de AEMET y Puertos del Estado.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#FAFAFA",
-  "theme_color": "#3F51B5",
+  "background_color": "#F7F1E6",
+  "theme_color": "#2F5D3A",
   "lang": "es",
   "icons": [
     {
