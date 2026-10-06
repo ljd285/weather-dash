@@ -1,4 +1,4 @@
-// Service worker mínimo para Meteo VLC.
+// Service worker mínimo para MeteoMaclet.
 // Estrategia: red primero (para tener siempre los datos más recientes al
 // abrir la app con conexión); si la petición falla (sin conexión), se
 // devuelve la última copia guardada en caché como reserva.
@@ -7,7 +7,7 @@
 // (Plotly, Leaflet, tipografía). Las teselas del mapa no se guardan: son miles de
 // imágenes y harían crecer la caché sin límite.
 
-const CACHE_NAME = "meteo-vlc-v5";
+const CACHE_NAME = "meteo-vlc-v6";
 const URLS_NUCLEO = [
   "./",
   "./index.html",

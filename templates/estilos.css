@@ -10,16 +10,18 @@
     --fondo: ${color_fondo};
     --superficie: #FFFFFF;
     --texto: ${color_texto};
-    --texto-secundario: ${color_gris};
+    --texto-secundario: #4A5249;
     --sombra: rgba(0,0,0,0.12);
     --sombra-suave: rgba(0,0,0,0.08);
-    --borde: rgba(0,0,0,0.08);
-    --color-ahora: #00A13E;
-    --color-pronostico: #1565C0;
-    --color-historico: #795548;
-    --fondo-ahora: #DDF8E5;
-    --fondo-pronostico: #E3F2FD;
-    --fondo-historico: #EFEBE9;
+    --borde: #E3D9C6;
+    --color-ahora: #2F5D3A;
+    --color-pronostico: #2B6CA3;
+    --color-historico: #8A5A2B;
+    --color-marca: #2F5D3A;
+    --color-marca-acento: #C2560C;
+    --fondo-ahora: #E4EBD9;
+    --fondo-pronostico: #E1EAF0;
+    --fondo-historico: #F3E6D2;
     /* Calendario: divergente al estilo de los mapas de anomalías (violeta en lo
        muy frío, granate en lo muy cálido, gris en lo normal) y lluvia tipo radar
        (azules que pasan a violeta en lo intenso). Pasos comprobados para que
@@ -35,10 +37,12 @@
     --sombra: rgba(0,0,0,0.6);
     --sombra-suave: rgba(0,0,0,0.4);
     --borde: rgba(255,255,255,0.1);
-    --color-ahora: #3DDC84;
-    --color-pronostico: #64B5F6;
-    --color-historico: #BCAAA4;
-    --fondo-ahora: #0E2C1A;
+    --color-ahora: #9CC48A;
+    --color-pronostico: #64A6DB;
+    --color-historico: #D2A679;
+    --color-marca: #9CC48A;
+    --color-marca-acento: #F2A25E;
+    --fondo-ahora: #1B2A1F;
     --fondo-pronostico: #15263A;
     --fondo-historico: #29231F;
     /* En oscuro, lo más extremo es lo más luminoso. */
@@ -46,15 +50,19 @@
     --q0: #2D333B; --q1: #23507A; --q2: #2F6FAE; --q3: #4A90D9; --q4: #B39BF0; --q5: #E6D8FF;
 }
 body {
-    font-family: "Roboto", -apple-system, Arial, sans-serif;
+    font-family: "Work Sans", -apple-system, "Helvetica Neue", Arial, sans-serif;
     margin: 0; padding: 2rem;
     background: var(--fondo);
     color: var(--texto);
 }
 .contenedor { max-width: 1100px; margin: 0 auto; }
 .cabecera { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem 1rem; flex-wrap: wrap; }
-h1 { font-size: 2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; color: var(--color-pronostico); }
-.lema { margin: 0.15rem 0 0; color: var(--texto-secundario); font-size: 0.95rem; }
+h1 { font-family: "Fraunces", Georgia, serif; font-size: 2.4rem; font-weight: 700; margin: 0; line-height: 1; letter-spacing: -0.03em; color: var(--color-marca); }
+h1 span { color: var(--color-marca-acento); }
+.logo-marca { display: flex; align-items: center; gap: 0.8rem; }
+.logo-marca svg { width: 54px; height: 54px; flex-shrink: 0; }
+.lema { margin: 0.45rem 0 0; color: var(--color-marca); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; }
+.lema .actualizado { letter-spacing: 0.06em; font-weight: 500; color: var(--texto-secundario); }
 .actualizado-antiguo { color: #E65100; font-weight: 500; }
 :root[data-theme="dark"] .actualizado-antiguo { color: #FFB74D; }
 .controles-cabecera { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
@@ -92,7 +100,7 @@ h1 { font-size: 2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; colo
    confunda lo medido con lo previsto ni con el histórico. */
 .seccion {
     --color: var(--md-indigo); --tinte: var(--fondo);
-    background: var(--tinte); border-top: 5px solid var(--color); border-radius: 10px;
+    background: var(--tinte); border-top: 5px solid var(--color); border-radius: 16px;
     padding: 1rem 1.25rem 0.5rem; margin-bottom: 1.5rem; scroll-margin-top: 4.5rem;
 }
 .seccion-ahora { --color: var(--color-ahora); --tinte: var(--fondo-ahora); }
@@ -104,7 +112,7 @@ h1 { font-size: 2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; colo
 .plegable-seccion > summary::-webkit-details-marker { display: none; }
 .cabecera-seccion { display: block; padding-bottom: 0.5rem; }
 .plegable-seccion[open] > .cabecera-seccion { margin-bottom: 0.5rem; }
-.titulo-seccion { display: flex; align-items: center; gap: 0.35rem 0.75rem; flex-wrap: wrap; margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--color); }
+.titulo-seccion { font-family: "Fraunces", Georgia, serif; display: flex; align-items: center; gap: 0.35rem 0.75rem; flex-wrap: wrap; margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--color); }
 .titulo-seccion::before {
     content: ""; order: -1; width: 0.55rem; height: 0.55rem; margin: 0 0.15rem 0 0.1rem; flex-shrink: 0;
     border-right: 3px solid var(--color); border-bottom: 3px solid var(--color);
@@ -137,7 +145,7 @@ h2 { font-size: 1.3rem; font-weight: 500; }
 .tarjetas-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; }
 .tarjeta-kpi { box-sizing: border-box; background: var(--superficie); border-radius: 6px; border-top: 4px solid; padding: 1rem; box-shadow: 0 1px 3px var(--sombra); text-align: center; }
 .tarjeta-kpi h3 { margin: 0 0 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--texto-secundario); }
-.valor-kpi { margin: 0; font-size: 1.7rem; font-weight: 700; }
+.valor-kpi { margin: 0; font-family: "Fraunces", Georgia, serif; font-size: 1.7rem; font-weight: 700; color: var(--color-marca-acento); }
 .detalle-kpi { margin: 0.3rem 0 0; font-size: 0.85rem; color: var(--texto-secundario); }
 .tarjeta-dias { flex-basis: 170px; }
 .notas-records { margin: 0.25rem 0 1rem; padding-left: 1.25rem; font-size: 0.9rem; }

@@ -1,4 +1,4 @@
-# Meteo VLC
+# MeteoMaclet
 
 El tiempo en Valencia en una página: lo que marca ahora, lo que viene y cómo va el año, con datos de AEMET OpenData y Puertos del Estado.
 
