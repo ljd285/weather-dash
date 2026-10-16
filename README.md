@@ -10,7 +10,7 @@ La página se divide en tres secciones, cada una con su color y a las que se sal
 
 Cada sección dice de dónde salen sus datos y resume lo esencial en una línea (p. ej. «entre 19° y 31° · lluvia probable el sábado»). Contenido, para una o varias estaciones (por defecto Valencia y el aeropuerto):
 
-- **Avisos**: avisos meteorológicos de AEMET (Meteoalerta) en vigor o próximos para la zona de la estación.
+- **Avisos**: avisos meteorológicos de AEMET (Meteoalerta) en vigor o próximos para la zona de la estación. Arriba, una línea de tiempo con una fila por fenómeno y una barra por aviso (del color de su nivel) sobre las horas de los días con aviso, con «ahora» marcado y lo ya pasado rayado; debajo, la lista por días, con lo que le queda a cada aviso en vigor («quedan 9 h») o cuándo empieza («empieza en 19 h»).
 - **Ahora**: última observación de la estación (temperatura, viento, humedad, precipitación), agrupada en «Aire» y «Mar».
 - **Predicción**: tarjetas de los 7 días con cielo, máxima y mínima, probabilidad de lluvia, viento e índice UV (con el color de su categoría de la OMS; AEMET solo lo da para los primeros días).
 - **Histórico**: temperatura (sobre la banda de valores normales), precipitación, viento y humedad de los últimos 90 días.

@@ -1061,6 +1061,83 @@ def _momento_aviso(momento):
     return f"{DIAS_SEMANA[local.weekday()].capitalize()} {local:%d/%m %H:%M}"
 
 
+ICONOS_FENOMENO = [("costero", "🌊"), ("tormenta", "⛈️"), ("lluvia", "🌧️"), ("precipitac", "🌧️"), ("nieve", "🌨️"),
+                   ("viento", "💨"), ("máxima", "🌡️"), ("mínima", "🥶"), ("niebla", "🌫️"), ("polvo", "🌫️"),
+                   ("aludes", "🏔️"), ("deshielo", "💧")]
+DIAS_LINEA_AVISOS = 4  # como mucho, los días que abarca la línea de tiempo de los avisos
+
+
+def _duracion(delta):
+    """«7 h», «menos de 1 h», «2 días y 3 h»."""
+    horas = int(delta.total_seconds() // 3600)
+    if horas < 1:
+        return "menos de 1 h"
+    if horas < 48:
+        return f"{horas} h"
+    dias, resto = divmod(horas, 24)
+    return f"{dias} días" + (f" y {resto} h" if resto else "")
+
+
+def construir_linea_avisos(avisos, ahora):
+    """Línea de tiempo de los avisos: una fila por fenómeno y una barra por
+    aviso, del color de su nivel, sobre las horas de los días con aviso
+    (desde hoy a las 00:00). Una línea marca «ahora» y lo ya pasado sale
+    rayado. Se ve de un vistazo qué dura cuánto y qué coincide con qué."""
+    con_fecha = [a for a in avisos if a.get("inicio") or a.get("fin")]
+    if not con_fecha:
+        return ""
+    local = ahora.astimezone(ZONA_HORARIA)
+    inicio = datetime.combine(local.date(), datetime.min.time(), tzinfo=ZONA_HORARIA)
+    ultimo = max((a["fin"] - timedelta(microseconds=1)) if a.get("fin") else (a["inicio"] or ahora)
+                 for a in con_fecha).astimezone(ZONA_HORARIA).date()
+    dias = min(max((ultimo - local.date()).days + 1, 1), DIAS_LINEA_AVISOS)
+    fin = inicio + timedelta(days=dias)
+    total = (fin - inicio).total_seconds()
+
+    def pos(momento):
+        return 100 * min(max((momento - inicio).total_seconds(), 0), total) / total
+
+    filas = {}
+    for aviso in sorted(con_fecha, key=lambda a: (a.get("inicio") or ahora)):
+        filas.setdefault(fenomeno_de_evento(aviso["evento"] or aviso["titular"]), []).append(aviso)
+    # Primero el fenómeno con el aviso de nivel más alto.
+    orden = sorted(filas, key=lambda f: -max(NIVELES_AVISO[a["nivel"]] for a in filas[f]))
+    separadores = "".join(f'<span class="linea-sep" style="left:{100 * d / dias:.2f}%"></span>' for d in range(1, dias))
+    pasado = f'<span class="linea-pasado" style="width:{pos(ahora):.2f}%"></span>'
+    filas_html = []
+    for fenomeno in orden:
+        icono = next((i for clave, i in ICONOS_FENOMENO if clave in fenomeno), "⚠️")
+        barras = []
+        for aviso in filas[fenomeno]:
+            desde, hasta = aviso.get("inicio") or inicio, aviso.get("fin") or fin
+            if hasta <= inicio or desde >= fin:
+                continue
+            izquierda, derecha = pos(desde), pos(hasta)
+            texto = (f"{fenomeno.capitalize()}, nivel {aviso['nivel']}: {_hora_local(desde, '%a %d %H:%M')} – "
+                     f"{_hora_local(hasta, '%a %d %H:%M') if aviso.get('fin') else 'sin fin indicado'}")
+            barras.append(f'<span class="linea-barra nivel-{aviso["nivel"]}" style="left:{izquierda:.2f}%;'
+                          f'width:{max(derecha - izquierda, 0.8):.2f}%" title="{html.escape(texto)}"></span>')
+        if barras:
+            filas_html.append(f'<div class="linea-fila"><span class="linea-nombre">{icono} {html.escape(fenomeno.capitalize())}</span>'
+                              f'<div class="linea-pista">{separadores}{"".join(barras)}{pasado}</div></div>')
+    if not filas_html:
+        return ""
+    nombres_dias = "".join(
+        f'<span class="linea-dia" style="left:{100 * d / dias:.2f}%;width:{100 / dias:.2f}%">'
+        f'{"Hoy" if d == 0 else "Mañana" if d == 1 else DIAS_SEMANA[(local.date() + timedelta(days=d)).weekday()].capitalize() + " " + str((local.date() + timedelta(days=d)).day)}</span>'
+        for d in range(dias))
+    marcas = "".join(f'<span class="linea-hora" style="left:{100 * (d * 24 + h) / (dias * 24):.2f}%">{h:02d}</span>'
+                     for d in range(dias) for h in (6, 12, 18))
+    return (
+        f'<div class="linea-avisos" role="img" aria-label="Duración de los avisos en los próximos días">'
+        f'<div class="linea-fila linea-cab"><span></span><div class="linea-escala">{nombres_dias}</div></div>'
+        f'<div class="linea-cuerpo">{"".join(filas_html)}'
+        f'<div class="linea-capa"><span></span><div><span class="linea-ahora" style="left:{pos(ahora):.2f}%" '
+        f'title="Ahora ({_hora_local(ahora, "%H:%M")})"></span></div></div></div>'
+        f'<div class="linea-fila"><span></span><div class="linea-escala">{marcas}</div></div></div>'
+    )
+
+
 def construir_banner_avisos(avisos, zona, error=False, ahora=None):
     """Recuadro de avisos de la zona de la estación, siempre bien visible
     arriba: en verde si no hay ninguno y, si los hay, agrupados por día (un
@@ -1132,6 +1209,12 @@ def construir_banner_avisos(avisos, zona, error=False, ahora=None):
             texto += f" · viene del {NOMBRES_DIA[(dia - timedelta(days=1)).weekday()]}"
         if sigue:
             texto += f" · sigue el {NOMBRES_DIA[(dia + timedelta(days=1)).weekday()]}"
+        # Cuánto falta: en el día en que está en vigor, lo que le queda (hasta
+        # el final del aviso, no del día); en el día en que empieza, cuándo.
+        if en_vigor and aviso["fin"]:
+            texto += f" · quedan {_duracion(aviso['fin'] - ahora)}"
+        elif empieza_hoy and not en_vigor and aviso["inicio"] and aviso["inicio"] > ahora:
+            texto += f" · empieza en {_duracion(aviso['inicio'] - ahora)}"
         return texto
 
     def titulo_dia(dia):
@@ -1162,7 +1245,7 @@ def construir_banner_avisos(avisos, zona, error=False, ahora=None):
     peor = max((a["nivel"] for a in avisos), key=NIVELES_AVISO.get)
     numero = f"{len(avisos)} aviso{'s' if len(avisos) > 1 else ''} meteorológico{'s' if len(avisos) > 1 else ''}"
     return recuadro(f"avisos-activos avisos-{peor}", "⚠", numero,
-                    f"{zona_html} · AEMET Meteoalerta · {enlace}", "".join(items))
+                    f"{zona_html} · AEMET Meteoalerta · {enlace}", construir_linea_avisos(avisos, ahora) + "".join(items))
 
 
 def normales_por_mes(registros):
