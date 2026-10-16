@@ -173,7 +173,8 @@ def test_texto_telegram_escapa_html_y_marca_el_cierre():
     texto = n.texto_telegram(ep)
     assert texto.startswith("🌧️ <b>LLUVIAS</b> 🟠 <b>NARANJA</b> 🟠\n") and "Dashboard" not in texto and "hora peninsular" not in texto and "Racha &lt;90 km/h&gt; &amp; lluvia" in texto
     assert texto.endswith('Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a>'
-                              ' · 🍊 <a href="https://ljd285.github.io/weather-dash/">MeteoMaclet</a>') and "Avisos en AEMET" not in texto
+                              ' · 🍊 <a href="https://ljd285.github.io/weather-dash/">MeteoMaclet</a>'
+                              '\nAlertas Generalitat: <a href="https://www.112cv.gva.es/es/alertas-metereologicos">112CV</a>') and "Avisos en AEMET" not in texto
     assert len(texto) < 4096
     assert n.texto_telegram(ep, cierre="retirado").startswith("🚫") and "⬜" not in n.texto_telegram(ep)
     assert "retirado" in n.texto_respuesta_telegram()
@@ -275,3 +276,9 @@ def test_los_tramos_de_telegram_empiezan_por_mayuscula():
     assert any(linea.startswith("🟡 <b>Amarillo</b>, ") for linea in lineas)
     assert any(linea.startswith("🟠 <b>Naranja</b>, ") for linea in lineas)
     assert not any("<b>amarillo</b>" in linea or "<b>naranja</b>" in linea for linea in lineas)
+
+
+def test_linea_en_blanco_entre_el_titular_y_el_texto():
+    ep = n.episodios([tramo("amarillo", 2, 6)], ZONA)[0]
+    lineas = n.texto_telegram(ep).splitlines()
+    assert lineas[0].startswith("🌧️ <b>LLUVIAS</b>") and lineas[1] == "" and lineas[2].startswith("📍 ")

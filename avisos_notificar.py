@@ -333,6 +333,7 @@ EMOJIS_FENOMENO = [
     ("polvo", "🌫️"), ("incendio", "🔥"), ("aludes", "🏔️"),
 ]
 EMOJI_FENOMENO_POR_DEFECTO = "⚠️"
+URL_112CV = "https://www.112cv.gva.es/es/alertas-metereologicos"
 
 
 def emoji_fenomeno(fenomeno):
@@ -352,6 +353,7 @@ def texto_telegram(episodio, cierre=None, enlace_nuevo=None):
     lineas = [
         f"{emoji_fenomeno(episodio['fenomeno'])} <b>{_html(episodio['fenomeno']).upper()}</b> "
         f"{COLORES[nivel]} <b>{nivel.upper()}</b> {COLORES[nivel]}",
+        "",
         f"📍 {_html(episodio['zona'])}",
         f"🕑 {f._momento_aviso(episodio['inicio'])} → {f._momento_aviso(episodio['fin'])}",
         "",
@@ -364,7 +366,8 @@ def texto_telegram(episodio, cierre=None, enlace_nuevo=None):
         else:
             lineas.append(f"{COLORES[tramo['nivel']]} <b>{tramo['nivel'].capitalize()}</b>, {f._momento_aviso(tramo['inicio'])} → {f._momento_aviso(tramo['fin'])}"
                           + (f": {descripcion}" if descripcion else ""))
-    lineas += ["", f'Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a> · 🍊 <a href="{URL_DASHBOARD}">MeteoMaclet</a>']
+    lineas += ["", f'Fuente: <a href="https://www.aemet.es/es/eltiempo/prediccion/avisos">AEMET</a> · 🍊 <a href="{URL_DASHBOARD}">MeteoMaclet</a>',
+               f'Alertas Generalitat: <a href="{URL_112CV}">112CV</a>']
     marca = [CIERRES_TELEGRAM[cierre]] if cierre else []
     if cierre == "sustituido" and enlace_nuevo:
         marca = [f'🔄 <b>Aviso sustituido por <a href="{enlace_nuevo}">uno posterior</a></b>']
