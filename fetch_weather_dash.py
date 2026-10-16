@@ -1108,7 +1108,8 @@ def construir_linea_avisos(avisos, ahora):
     for fenomeno in orden:
         icono = next((i for clave, i in ICONOS_FENOMENO if clave in fenomeno), "⚠️")
         barras = []
-        for aviso in filas[fenomeno]:
+        # Del nivel más bajo al más alto: si dos avisos coinciden, el más alto queda encima.
+        for aviso in sorted(filas[fenomeno], key=lambda a: NIVELES_AVISO[a["nivel"]]):
             desde, hasta = aviso.get("inicio") or inicio, aviso.get("fin") or fin
             if hasta <= inicio or desde >= fin:
                 continue
