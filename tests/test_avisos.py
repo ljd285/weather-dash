@@ -105,3 +105,25 @@ def test_aviso_de_varios_dias_sale_en_cada_dia():
     assert "Hasta las 09:00 · viene del jueves" in viernes and "Hasta las 24:00 · viene del jueves" in viernes
     assert "De 06:00 a 12:00" in viernes
     assert banner.count("60 mm en 1 h") == 6  # la descripción se repite en cada día
+
+
+def test_linea_de_tiempo_y_cuanto_queda():
+    ahora = datetime(2026, 10, 16, 9, 0, tzinfo=timezone.utc)  # viernes, 11:00 local
+
+    def aviso(nivel, evento, desde_h, hasta_h):
+        return {"nivel": nivel, "evento": evento, "titular": "", "descripcion": "", "zonas": [],
+                "inicio": ahora + timedelta(hours=desde_h), "fin": ahora + timedelta(hours=hasta_h)}
+    banner = f.construir_banner_avisos([
+        aviso("amarillo", "Aviso amarillo por costeros", -11, 25),
+        aviso("naranja", "Aviso naranja por lluvias", 7, 19), aviso("amarillo", "Aviso amarillo por lluvias", 19, 28),
+    ], "Zona", ahora=ahora)
+    linea = banner[banner.index('class="linea-avisos"'):banner.index('<p class="avisos-dia">')]
+    # Una fila por fenómeno, primero el de nivel más alto; dos días (hoy y mañana).
+    assert linea.index("🌧️ Lluvias") < linea.index("🌊 Costeros") and linea.count('class="linea-fila"') == 2 + 1  # 2 fenómenos + la escala de horas
+    assert ">Hoy<" in linea and ">Mañana<" in linea and linea.count('class="linea-barra') == 3
+    assert 'class="linea-ahora" style="left:22.92%"' in linea  # 11:00 de 48 h
+    assert "En vigor hasta las 24:00 · sigue el sábado · quedan 25 h" in banner
+    assert "De 18:00 a 24:00 · sigue el sábado · empieza en 7 h" in banner
+    assert "De 06:00 a 15:00 · empieza en 19 h" in banner  # el tramo amarillo de las lluvias, mañana
+    assert "Hasta las 06:00 · viene del viernes" in banner  # el día siguiente de un aviso no repite «empieza en»
+    assert f._duracion(timedelta(minutes=30)) == "menos de 1 h" and f._duracion(timedelta(hours=53)) == "2 días y 5 h"
