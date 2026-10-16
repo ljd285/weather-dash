@@ -127,3 +127,13 @@ def test_linea_de_tiempo_y_cuanto_queda():
     assert "De 06:00 a 15:00 · empieza en 19 h" in banner  # el tramo amarillo de las lluvias, mañana
     assert "Hasta las 06:00 · viene del viernes" in banner  # el día siguiente de un aviso no repite «empieza en»
     assert f._duracion(timedelta(minutes=30)) == "menos de 1 h" and f._duracion(timedelta(hours=53)) == "2 días y 5 h"
+
+
+def test_linea_de_tiempo_el_nivel_mas_alto_queda_encima():
+    ahora = datetime(2026, 10, 16, 20, 0, tzinfo=timezone.utc)
+    naranja = {"nivel": "naranja", "evento": "Aviso de lluvias de nivel naranja", "titular": "", "descripcion": "",
+               "zonas": [], "inicio": ahora + timedelta(hours=4), "fin": ahora + timedelta(hours=28)}
+    amarillo = dict(naranja, nivel="amarillo", evento="Aviso de lluvias de nivel amarillo")
+    linea = f.construir_linea_avisos([naranja, amarillo], ahora)
+    assert linea.count("linea-fila") == 3  # los dos en la misma fila (mismo fenómeno)
+    assert linea.index("nivel-amarillo") < linea.index("nivel-naranja")  # el naranja, dibujado después
