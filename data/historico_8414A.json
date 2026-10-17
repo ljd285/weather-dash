@@ -11044,5 +11044,33 @@
 "hrMin": "34",
 "horaHrMin": "12:32",
 "pintMax": "0,0"
+},
+{
+"fecha": "2026-10-12",
+"indicativo": "8414A",
+"nombre": "VALENCIA AEROPUERTO",
+"provincia": "VALENCIA",
+"altitud": "56",
+"tmed": "21,8",
+"prec": "0,0",
+"tmin": "15,8",
+"horatmin": "06:22",
+"tmax": "27,8",
+"horatmax": "11:59",
+"dir": "05",
+"velmedia": "2,8",
+"racha": "7,8",
+"horaracha": "13:33",
+"sol": "10,8",
+"presMax": "1014,4",
+"horaPresMax": "Varias",
+"presMin": "1007,8",
+"horaPresMin": "02",
+"hrMedia": "68",
+"hrMax": "92",
+"horaHrMax": "22:44",
+"hrMin": "40",
+"horaHrMin": "12:17",
+"pintMax": "0,0"
 }
 ]
