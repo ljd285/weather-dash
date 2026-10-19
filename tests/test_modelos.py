@@ -97,3 +97,21 @@ def test_reintenta_si_open_meteo_no_responde(monkeypatch):
     monkeypatch.setattr(f.time, "sleep", lambda s: None)
     assert f.obtener_modelos(39.48, -0.37) == {"daily": {}}
     assert len(llamadas) == 2
+
+
+def test_modelos_por_horas():
+    horas = [str(pd.Timestamp("2026-10-19 12:00") + pd.Timedelta(hours=h)) for h in range(6)]
+    crudo = {"hourly": {"time": horas}}
+    for codigo in ("ecmwf_ifs025", "icon_seamless", "meteofrance_seamless", "gfs_seamless"):
+        crudo["hourly"][f"temperature_2m_{codigo}"] = [20, 21, 22, 23, 22, 21]
+        crudo["hourly"][f"precipitation_{codigo}"] = [0, 0, 2.5, 7, 0.2, 0]
+    crudo["hourly"]["temperature_2m_meteofrance_seamless"][4:] = [None, None]  # fuera de su alcance
+    crudo["hourly"]["precipitation_meteofrance_seamless"][4:] = [None, None]
+    df = f.modelos_horas_a_dataframe(crudo)
+    assert len(df) == 4 * 6 - 2 and set(df.columns) == {"hora", "modelo", "temp", "prec"}
+    html = f.construir_graficos_horas_modelos(df)
+    assert "Temperatura por horas" in html and "Lluvia por horas en cada modelo" in html
+    assert 'class="lluvia-en-lineas"' in html and 'data-vista="lineas" hidden' in html
+    assert html.index("ECMWF") < html.index("GFS") and "o-Fr." in html  # en el JSON de Plotly, con los acentos escapados
+    assert f.construir_graficos_horas_modelos(pd.DataFrame()) == ""
+    assert f.modelos_horas_a_dataframe({}).empty

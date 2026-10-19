@@ -151,6 +151,7 @@ h2 { font-size: 1.3rem; font-weight: 500; }
 .notas-records { margin: 0.25rem 0 1rem; padding-left: 1.25rem; font-size: 0.9rem; }
 .notas-records li { margin: 0.2rem 0; }
 .bloque-plegable { margin-bottom: 1rem; }
+.modo-lluvia { margin: 0.6rem 0 0.4rem; }
 .subtitulo-evolucion { font-weight: 500; margin: 0.6rem 0 0.3rem; }
 .bloque-plegable > summary { cursor: pointer; margin: 0 0 0.5rem; }
 .dias-pronostico { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 0.5rem; margin: 0.5rem 0 1rem; }

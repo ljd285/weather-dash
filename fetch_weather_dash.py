@@ -803,6 +803,46 @@ def obtener_modelos(lat, lon, dias=7):
             time.sleep(5)
 
 
+HORAS_MODELOS = 72
+
+
+def obtener_modelos_horas(lat, lon, horas=HORAS_MODELOS):
+    """Predicción por horas (temperatura y lluvia) de cada modelo de MODELOS
+    para las próximas `horas` horas desde la hora actual, en una petición
+    aparte de la diaria (si falla, la diaria no se pierde). Reintenta una vez."""
+    parametros = {
+        "latitude": lat, "longitude": lon, "hourly": "temperature_2m,precipitation",
+        "models": ",".join(codigo for codigo, _, _ in MODELOS),
+        "forecast_hours": horas, "timezone": "Europe/Madrid",
+    }
+    for intento in range(2):
+        try:
+            resp = requests.get(URL_MODELOS, params=parametros, timeout=45)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException:
+            if intento == 1:
+                raise
+            time.sleep(5)
+
+
+def modelos_horas_a_dataframe(crudo):
+    """Respuesta de obtener_modelos_horas -> DataFrame (hora, modelo, temp,
+    prec), sin las horas en que un modelo no da nada (p. ej. más allá de su
+    alcance)."""
+    horario = (crudo or {}).get("hourly", {})
+    horas = pd.to_datetime(horario.get("time", []))
+    tablas = []
+    for codigo, nombre, _ in MODELOS:
+        tabla = pd.DataFrame({"hora": horas, "modelo": nombre})
+        for variable, columna in (("temperature_2m", "temp"), ("precipitation", "prec")):
+            valores = horario.get(f"{variable}_{codigo}", [None] * len(horas))
+            tabla[columna] = pd.to_numeric(pd.Series(valores, dtype="object"), errors="coerce").values
+        tablas.append(tabla.dropna(subset=["temp", "prec"], how="all"))
+    tablas = [t for t in tablas if not t.empty]
+    return pd.concat(tablas, ignore_index=True) if tablas else pd.DataFrame(columns=["hora", "modelo", "temp", "prec"])
+
+
 def modelos_a_dataframe(crudo):
     """Respuesta de obtener_modelos -> DataFrame (fecha, modelo, tmax, tmin,
     prec), sin las filas de un modelo que no trae ningún dato."""
@@ -2112,6 +2152,76 @@ def construir_tabla_modelos(df_pred, df_modelos, acuerdo, hoy=None):
     return (
         f'<div class="scroll-tabla"><table class="tabla-modelos"><thead><tr><th></th>{cabecera}</tr></thead>'
         f'<tbody>{"".join(filas)}</tbody><tfoot><tr><th>Acuerdo</th>{pie}</tr></tfoot></table></div>'
+    )
+
+
+#: Nombres cortos para el eje del mapa de lluvia (en el móvil no caben los largos).
+NOMBRES_CORTOS_MODELOS = {"Météo-France": "Météo-Fr."}
+#: Tramos de la lluvia por horas (mm/h) como los del calendario: (desde,
+#: color, etiqueta). Hasta 0,1 mm no cuenta como lluvia.
+TRAMOS_LLUVIA_HORA = [(0, "#EBEDF0", "&lt; 0,1"), (0.1, "#BDD7EE", "0,1–1"), (1, "#6BAED6", "1–5"),
+                      (5, "#3182BD", "5–15"), (15, "#54278F", "15–30"), (30, "#2D004B", "≥ 30")]
+
+
+def _tramo_lluvia_hora(mm):
+    if mm is None or pd.isna(mm):
+        return None
+    return max(i for i, (desde, _, _) in enumerate(TRAMOS_LLUVIA_HORA) if mm >= desde)
+
+
+def construir_graficos_horas_modelos(df_horas):
+    """Próximas HORAS_MODELOS horas según cada modelo: temperatura en líneas
+    y la lluvia como mapa (una fila por modelo, cada hora coloreada por su
+    cantidad) o, con la casilla, en líneas. Devuelve el HTML del bloque."""
+    if df_horas is None or df_horas.empty:
+        return ""
+    layout_comun = dict(template="plotly_white", margin=dict(t=45, b=40, l=50, r=20))
+    formato_x = dict(tickformat="%H h<br>%a %-d", hoverformat="%a %-d, %H h", dtick=12 * 3600 * 1000, tickangle=0)
+    modelos = [n for _, n, _ in MODELOS if (df_horas["modelo"] == n).any()]
+    dias = pd.date_range(df_horas["hora"].min().normalize() + pd.Timedelta(days=1), df_horas["hora"].max(), freq="D")
+
+    def separar_dias(fig):
+        for dia in dias:
+            fig.add_vline(x=dia, line_width=1, line_dash="dot", line_color=MATERIAL["gris"], opacity=0.5)
+
+    def lineas(columna, titulo, eje, unidad, rango, forma="linear"):
+        fig = go.Figure()
+        for nombre in modelos:
+            sub = df_horas[df_horas["modelo"] == nombre]
+            fig.add_trace(go.Scatter(x=sub["hora"], y=sub[columna], name=nombre, line=dict(color=COLORES_MODELOS[nombre], width=2, shape=forma),
+                                     hovertemplate=f"%{{y:.1f}} {unidad}"))
+        separar_dias(fig)
+        fig.update_xaxes(**formato_x)
+        fig.update_yaxes(range=rango, title=eje)
+        fig.update_layout(title=titulo, height=300, hovermode="x unified", legend=dict(orientation="h", y=-0.3), **layout_comun)
+        return _html_grafico(fig)
+
+    temperatura = lineas("temp", "Temperatura por horas", "°C", "°C", _rango_eje([df_horas["temp"]], 10, 30, 1))
+    tabla = df_horas.pivot_table(index="modelo", columns="hora", values="prec", aggfunc="first").reindex(modelos)
+    # El color va por tramos (como el calendario): z es el tramo y la cantidad va aparte, para el texto.
+    tramos = [[_tramo_lluvia_hora(v) for v in fila] for fila in tabla.values]
+    n = len(TRAMOS_LLUVIA_HORA)
+    escala = [p for i, (_, color, _) in enumerate(TRAMOS_LLUVIA_HORA) for p in ([i / n, color], [(i + 1) / n, color])]
+    textos = [[f"{nombre}: {_es(v)} mm" if pd.notna(v) else f"{nombre}: sin dato" for v in fila]
+              for nombre, fila in zip(modelos, tabla.values, strict=True)]
+    fig = go.Figure(go.Heatmap(
+        z=tramos, x=tabla.columns, y=[NOMBRES_CORTOS_MODELOS.get(nm, nm) for nm in modelos], customdata=textos,
+        colorscale=escala, zmin=-0.5, zmax=n - 0.5, ygap=3,
+        colorbar=dict(title="mm/h", thickness=10, tickvals=list(range(n)), ticktext=[t for _, _, t in TRAMOS_LLUVIA_HORA]),
+        hovertemplate="%{customdata}<extra>%{x|%a %-d, %H h}</extra>",
+    ))
+    separar_dias(fig)
+    fig.update_xaxes(**formato_x)
+    fig.update_yaxes(autorange="reversed")
+    fig.update_layout(title="Lluvia por horas en cada modelo", height=110 + 38 * len(modelos), **layout_comun)
+    mapa = _html_grafico(fig)
+    lluvia_lineas = lineas("prec", "Lluvia por horas (mm en cada hora)", "mm/h", "mm",
+                           _rango_eje([df_horas["prec"]], 0, 5, 1), forma="hvh")
+    return (
+        f'<div class="graficos-apilados horas-modelos">{temperatura}'
+        '<label class="cal-modo modo-lluvia"><input type="checkbox" class="lluvia-en-lineas"> Lluvia en líneas</label>'
+        f'<div class="vista-lluvia" data-vista="mapa">{mapa}</div>'
+        f'<div class="vista-lluvia" data-vista="lineas" hidden>{lluvia_lineas}</div></div>'
     )
 
 
@@ -3626,6 +3736,28 @@ def main():
             if crudo_modelos:
                 df_modelos = modelos_a_dataframe(crudo_modelos)
 
+        # Lo mismo por horas (próximas HORAS_MODELOS horas), para el gráfico por horas.
+        df_modelos_horas = pd.DataFrame()
+        if estacion.get("lat") is not None and estacion.get("lon") is not None:
+            clave_horas = f"modelos_horas_{estacion['lat']:.2f}_{estacion['lon']:.2f}"
+            crudo_horas = None
+            try:
+                crudo_horas = obtener_modelos_horas(estacion["lat"], estacion["lon"])
+                if modelos_horas_a_dataframe(crudo_horas).empty:
+                    print(f"Aviso: la predicción por horas de los modelos para {nombre} salió vacía.")
+                    crudo_horas = None
+                else:
+                    _guardar_ultimo(clave_horas, crudo_horas)
+            except Exception as exc:
+                print(f"Aviso: no se pudo obtener la predicción por horas de los modelos para {nombre}: {exc}")
+            if crudo_horas is None:
+                crudo_horas, _ = _leer_ultimo(clave_horas)
+            if crudo_horas:
+                df_modelos_horas = modelos_horas_a_dataframe(crudo_horas)
+                # Con una copia antigua, las primeras horas ya han pasado.
+                ahora_local = pd.Timestamp(datetime.now(ZONA_HORARIA).replace(tzinfo=None)).floor("h")
+                df_modelos_horas = df_modelos_horas[df_modelos_horas["hora"] >= ahora_local]
+
         # Archivo de previsiones para «¿Cuánto aciertan?»: solo lo descargado
         # hoy (una copia de reserva antigua no es la previsión de hoy).
         archivo_previsiones = pd.DataFrame()
@@ -3736,6 +3868,15 @@ def main():
         seccion.append(f'<section class="seccion seccion-pronostico" data-seccion="pronostico" id="{slug}-pronostico">')
         seccion.append(cabecera_seccion("Próximos días", "Predicción de AEMET para el municipio", resumen_pronostico(df_pred)))
         seccion.append(construir_tarjetas_pronostico(df_pred, extremos))
+        bloque_horas = construir_graficos_horas_modelos(df_modelos_horas)
+        if bloque_horas:
+            seccion.append(f'<details class="bloque-plegable" open><summary class="subtitulo">Próximas {HORAS_MODELOS} horas '
+                           'según los modelos</summary>')
+            seccion.append(bloque_horas)
+            seccion.append('<p class="aviso">ECMWF, ICON, Météo-France y GFS, por horas, para el punto de la estación '
+                           '(vía Open-Meteo). Cada modelo llega hasta donde da su predicción por horas; Météo-France usa '
+                           'AROME, el de más resolución, en las primeras horas. En el mapa, cada casilla es una hora; '
+                           'la casilla «Lluvia en líneas» la muestra como una línea por modelo.</p></details>')
         acuerdo = acuerdo_modelos(df_pred, df_modelos)
         if acuerdo:
             seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Comparar modelos</summary>')

@@ -339,3 +339,17 @@ document.querySelectorAll('.bloque-acierto').forEach(function(bloque) {
         });
     });
 });
+
+// Gráfico por horas de los modelos: la lluvia, en mapa (por defecto) o en líneas.
+document.querySelectorAll('.horas-modelos').forEach(function(bloque) {
+    var casilla = bloque.querySelector('.lluvia-en-lineas');
+    if (!casilla) return;
+    casilla.addEventListener('change', function() {
+        bloque.querySelectorAll('.vista-lluvia').forEach(function(v) {
+            v.hidden = (v.getAttribute('data-vista') === 'lineas') !== casilla.checked;
+            if (!v.hidden && window.Plotly) {
+                v.querySelectorAll('.plotly-graph-div').forEach(function(div) { Plotly.Plots.resize(div); });
+            }
+        });
+    });
+});
