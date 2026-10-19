@@ -1650,9 +1650,6 @@ def _grafico_intensidad_lluvia(df, layout_comun):
 
 
 HORAS_PREDICCION_HORARIA = 48
-#: Trazo de las líneas de predicción: discontinuo, para distinguirlas de
-#: los datos medidos (boya, histórico), que van con línea continua.
-TRAZO_PREVISION = "dash"
 
 
 def _por_hora(lista):
@@ -1739,6 +1736,73 @@ def prediccion_horaria_a_dataframe(prediccion, ahora=None):
     return df, noches
 
 
+HORAS_EVOLUCION = 72
+
+
+def construir_graficos_estacion(observaciones, horas=HORAS_EVOLUCION, ahora=None):
+    """Gráficos de las últimas `horas` horas medidas por la estación, en hora
+    local: temperatura (con la máxima y la mínima de cada hora), lluvia de
+    cada hora con el acumulado, viento medio y racha (con su dirección al
+    pasar el ratón) y humedad. Las noches van separadas por días."""
+    df = _observaciones_a_dataframe(observaciones)
+    if df.empty:
+        return []
+    for col in ("vv", "hr", "dv"):
+        df[col] = pd.to_numeric(df[col], errors="coerce") if col in df.columns else float("nan")
+    fin = pd.Timestamp(ahora).tz_convert("UTC").tz_localize(None) if ahora is not None else df["fint"].max()
+    df = df[df["fint"] > fin - pd.Timedelta(hours=horas)].copy()
+    if df.empty:
+        return []
+    df["hora"] = df["fint"].dt.tz_localize("UTC").dt.tz_convert(ZONA_HORARIA).dt.tz_localize(None)
+    layout_comun = dict(template="plotly_white", height=280, margin=dict(t=50, b=40, l=50, r=20), hovermode="x unified")
+    formato_x = dict(tickformat="%a %-d", hoverformat="%a %-d, %H h", dtick=24 * 3600 * 1000, tickangle=0)
+    graficos = []
+
+    def terminar(fig, titulo, eje, rango, leyenda=False):
+        for dia in pd.date_range(df["hora"].min().normalize() + pd.Timedelta(days=1), df["hora"].max(), freq="D"):
+            fig.add_vline(x=dia, line_width=1, line_dash="dot", line_color=MATERIAL["gris"], opacity=0.4)
+        fig.update_xaxes(**formato_x)
+        fig.update_layout(yaxis_range=rango, yaxis_title=eje)  # solo el eje principal (la lluvia tiene otro)
+        fig.update_layout(title=titulo, showlegend=leyenda, legend=dict(orientation="h", y=-0.25), **layout_comun)
+        graficos.append(_html_grafico(fig))
+
+    if df["ta"].notna().any():
+        fig = go.Figure()
+        if df["tamax"].notna().any() and df["tamin"].notna().any():
+            fig.add_trace(go.Scatter(x=df["hora"], y=df["tamax"], mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
+            fig.add_trace(go.Scatter(x=df["hora"], y=df["tamin"], mode="lines", line=dict(width=0), fill="tonexty",
+                                     fillcolor="rgba(244,67,54,0.15)", name="Máx. y mín. de cada hora", hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=df["hora"], y=df["ta"], name="Temperatura", line=dict(color=MATERIAL["rojo"], width=2),
+                                 hovertemplate="%{y:.1f} °C"))
+        terminar(fig, "Temperatura", "°C", _rango_eje([df["ta"], df["tamax"], df["tamin"]], 10, 30, 1))
+
+    if df["prec"].notna().any():
+        total = df["prec"].fillna(0).sum()
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=df["hora"], y=df["prec"], name="Lluvia de la hora", marker_color=MATERIAL["azul"],
+                             hovertemplate="%{y:.1f} mm"))
+        fig.add_trace(go.Scatter(x=df["hora"], y=df["prec"].fillna(0).cumsum(), name="Acumulada", yaxis="y2",
+                                 line=dict(color=MATERIAL["indigo"], width=1.5, dash="dot"), hovertemplate="%{y:.1f} mm acumulados"))
+        fig.update_layout(yaxis2=dict(overlaying="y", side="right", showgrid=False, rangemode="tozero", title="acum."))
+        terminar(fig, f"Lluvia ({_es(total)} mm en {horas} h)", "mm/h", _rango_eje([df["prec"]], 0, 2, 0.5), leyenda=True)
+
+    if df["vv"].notna().any() or df["vmax"].notna().any():
+        direcciones = [f"del {_sector_viento(d)}" if pd.notna(d) and _sector_viento(d) else "" for d in df["dv"]]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df["hora"], y=df["vv"] * 3.6, name="Viento medio", line=dict(color=MATERIAL["indigo"], width=2),
+                                 customdata=direcciones, hovertemplate="%{y:.0f} km/h %{customdata}"))
+        fig.add_trace(go.Scatter(x=df["hora"], y=df["vmax"] * 3.6, name="Racha", mode="markers",
+                                 marker=dict(color=MATERIAL["morado"], size=5), hovertemplate="racha %{y:.0f} km/h"))
+        terminar(fig, "Viento", "km/h", _rango_eje([df["vv"] * 3.6, df["vmax"] * 3.6], 0, 40, 5), leyenda=True)
+
+    if df["hr"].notna().any():
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df["hora"], y=df["hr"], name="Humedad", line=dict(color=MATERIAL["teal"], width=2),
+                                 hovertemplate="%{y:.0f} %"))
+        terminar(fig, "Humedad relativa", "%", [0, 100])
+    return graficos
+
+
 def construir_graficos_boya(df, nombre_boya):
     """Gráficos de las últimas HORAS_BOYA horas de la boya: temperatura del
     agua y altura significativa del oleaje (con periodo y dirección al pasar
@@ -1779,61 +1843,6 @@ def construir_graficos_boya(df, nombre_boya):
         fig.update_yaxes(range=_rango_eje([datos["Hm0"]], 0, 2, 0.3), title="m")
         fig.update_layout(title="Oleaje: altura significativa", showlegend=False, **layout_comun)
         graficos.append(_html_grafico(fig))
-    return graficos
-
-
-def construir_graficos_horarios(df, noches):
-    """Gráficos de las próximas 48 horas: temperatura y sensación,
-    precipitación, probabilidad de lluvia y de tormenta, y viento. La noche
-    va sombreada."""
-    if df.empty:
-        return []
-    layout_comun = dict(template="plotly_white", height=300, margin=dict(t=50, b=40, l=50, r=20), hovermode="x unified")
-    inicio, fin = df["fecha"].min(), df["fecha"].max()
-
-    def preparar(fig, titulo, eje, rango):
-        for ini_noche, fin_noche in noches:
-            if fin_noche > inicio and ini_noche < fin:
-                fig.add_vrect(x0=max(ini_noche, inicio), x1=min(fin_noche, fin), fillcolor=MATERIAL["gris"],
-                              opacity=0.12, line_width=0, layer="below")
-        fig.update_xaxes(range=[inicio, fin], dtick=12 * 3600 * 1000, tick0=inicio.normalize(),
-                         tickformat="%H h<br>%a %-d", hoverformat="%a %-d, %H h", tickangle=0)
-        fig.update_yaxes(range=rango, title=eje)
-        fig.update_layout(title=titulo, legend=dict(orientation="h", y=-0.3), **layout_comun)
-        return _html_grafico(fig)
-
-    graficos = []
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["fecha"], y=df["temp"], name="Temperatura", line=dict(color=MATERIAL["rojo"], width=2, dash=TRAZO_PREVISION),
-                             hovertemplate="%{y:.0f} °C"))
-    series = [df["temp"]]
-    if ((df["sens"] - df["temp"]).abs() >= 1).any():
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["sens"], name="Sensación térmica",
-                                 line=dict(color="#B71C1C", width=1.5, dash="dot"), hovertemplate="%{y:.0f} °C"))
-        series.append(df["sens"])
-    graficos.append(preparar(fig, "Temperatura por horas", "°C", _rango_eje(series, 10, 35, 2)))
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=df["fecha"], y=df["prec"], name="Precipitación", marker_color=MATERIAL["azul"],
-                         hovertemplate="%{y:.1f} mm<extra></extra>"))
-    graficos.append(preparar(fig, "Precipitación por horas", "mm", _rango_eje([df["prec"]], 0, 5, 1)))
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["fecha"], y=df["prob_precip"], name="Prob. de precipitación",
-                             line=dict(color=MATERIAL["azul_claro"], width=2, shape="hv", dash=TRAZO_PREVISION), hovertemplate="%{y:.0f} %"))
-    if df["prob_tormenta"].fillna(0).gt(0).any():
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["prob_tormenta"], name="Prob. de tormenta",
-                                 line=dict(color=MATERIAL["morado"], width=2, shape="hv", dash=TRAZO_PREVISION), hovertemplate="%{y:.0f} %"))
-    graficos.append(preparar(fig, "Probabilidad de lluvia y de tormenta", "%", [0, 100]))
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["fecha"], y=df["viento"], name="Viento", line=dict(color=MATERIAL["indigo"], width=2, dash=TRAZO_PREVISION),
-                             customdata=df["dir"].fillna("—"), hovertemplate="%{y:.0f} km/h del %{customdata}"))
-    if df["racha"].notna().any():
-        fig.add_trace(go.Scatter(x=df["fecha"], y=df["racha"], name="Racha", line=dict(color=MATERIAL["morado"], width=1.5, dash="dot"),
-                                 hovertemplate="%{y:.0f} km/h"))
-    graficos.append(preparar(fig, "Viento por horas", "km/h", _rango_eje([df["viento"], df["racha"]], 0, 40, 5)))
     return graficos
 
 
@@ -3596,26 +3605,6 @@ def main():
 
         time.sleep(2)
 
-        # Predicción por horas (próximas 48 h), con la misma reserva.
-        df_horas, noches = pd.DataFrame(), []
-        pred_horaria = None
-        try:
-            print(f"Procesando predicción horaria de {nombre}...")
-            pred_horaria = obtener_prediccion_horaria(municipio)
-            if prediccion_horaria_a_dataframe(pred_horaria)[0].empty:
-                print(f"Aviso: la predicción horaria de {nombre} salió vacía. Claves recibidas: {list(pred_horaria.keys())}.")
-                pred_horaria = None
-            else:
-                _guardar_ultimo(f"prediccion_horaria_{municipio}", pred_horaria)
-        except Exception as exc:
-            print(f"Aviso: no se pudo obtener la predicción horaria de {nombre}: {exc}")
-        if pred_horaria is None:
-            pred_horaria, guardado = _leer_ultimo(f"prediccion_horaria_{municipio}")
-            if pred_horaria:
-                notas_antiguedad.append(f"la predicción por horas (se muestra la descargada el {_hora_local(guardado)})")
-        if pred_horaria:
-            df_horas, noches = prediccion_horaria_a_dataframe(pred_horaria)
-
         # Otros modelos (Open-Meteo), con la misma reserva.
         df_modelos = pd.DataFrame()
         modelos_frescos = False
@@ -3718,7 +3707,7 @@ def main():
         fuente_ahora = "Medido por la estación de AEMET" + (
             f" y la {html.escape(nombre_boya)} (Puertos del Estado)" if config_boya else "")
         seccion.append(f'<section class="seccion seccion-ahora" data-seccion="ahora" id="{slug}-ahora">')
-        seccion.append(cabecera_seccion("Ahora", fuente_ahora, sello=f"Observado a las {hora_obs}" if hora_obs else ""))
+        seccion.append(cabecera_seccion("Ahora - Datos", fuente_ahora, sello=f"Observado a las {hora_obs}" if hora_obs else ""))
         seccion.append(construir_tarjetas_kpi(lectura_actual, mar, observaciones, resumen, nombre_boya)
                        or '<p class="aviso">No hay observaciones disponibles en esta actualización.</p>')
         tabla_7_dias = construir_tabla_ultimos_dias(observaciones, clima)
@@ -3726,26 +3715,27 @@ def main():
             seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Últimos 7 días</summary>')
             seccion.append(tabla_7_dias)
             seccion.append('</details>')
+        graficos_estacion = construir_graficos_estacion(observaciones)
         graficos_boya = construir_graficos_boya(df_boya, nombre_boya)
-        if graficos_boya:
-            seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Evolución del mar '
-                           f'(últimas {HORAS_BOYA} h)</summary><div class="graficos-apilados">')
-            seccion.extend(graficos_boya)
-            seccion.append('</div><p class="aviso">Datos de Puertos del Estado (red de boyas de aguas profundas). '
-                           'La boya está mar adentro: su temperatura es la del mar abierto, no la de la orilla. '
-                           'El oleaje indica de dónde viene (p. ej. «del NE»).</p></details>')
+        if graficos_estacion or graficos_boya:
+            seccion.append(f'<details class="bloque-plegable"><summary class="subtitulo">Evolución (últimas {HORAS_EVOLUCION} horas)</summary>')
+            if graficos_estacion:
+                seccion.append('<p class="subtitulo-evolucion">Estación de AEMET</p><div class="graficos-apilados">')
+                seccion.extend(graficos_estacion)
+                seccion.append('</div><p class="aviso">Lecturas horarias de la estación, en hora local; en temperatura, '
+                               'la franja es la máxima y la mínima de cada hora.</p>')
+            if graficos_boya:
+                seccion.append(f'<p class="subtitulo-evolucion">Mar · {html.escape(nombre_boya)}</p><div class="graficos-apilados">')
+                seccion.extend(graficos_boya)
+                seccion.append('</div><p class="aviso">Datos de Puertos del Estado (red de boyas de aguas profundas). '
+                               'La boya está mar adentro: su temperatura es la del mar abierto, no la de la orilla. '
+                               'El oleaje indica de dónde viene (p. ej. «del NE»).</p>')
+            seccion.append('</details>')
         seccion.append(CIERRE_SECCION)
 
         seccion.append(f'<section class="seccion seccion-pronostico" data-seccion="pronostico" id="{slug}-pronostico">')
         seccion.append(cabecera_seccion("Próximos días", "Predicción de AEMET para el municipio", resumen_pronostico(df_pred)))
         seccion.append(construir_tarjetas_pronostico(df_pred, extremos))
-        graficos_horas = construir_graficos_horarios(df_horas, noches)
-        if graficos_horas:
-            seccion.append('<details class="bloque-plegable" open><summary class="subtitulo">Próximas 48 horas</summary>')
-            seccion.append('<div class="graficos-apilados">')
-            seccion.extend(graficos_horas)
-            seccion.append('</div>')
-            seccion.append('<p class="aviso">La franja sombreada es la noche. Las líneas discontinuas son previsión.</p></details>')
         acuerdo = acuerdo_modelos(df_pred, df_modelos)
         if acuerdo:
             seccion.append('<details class="bloque-plegable"><summary class="subtitulo">Comparar modelos</summary>')
