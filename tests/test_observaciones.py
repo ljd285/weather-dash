@@ -110,3 +110,18 @@ def test_tabla_de_los_ultimos_7_dias():
     assert "<th>7 días</th>" in html and "Últimos 7 días: <strong>12,0 mm</strong>" in html
     assert 'class="chip t' in html and "vs normal" in html
     assert f.construir_tabla_ultimos_dias([], clima) == ""
+
+
+def test_evolucion_de_las_ultimas_72_horas():
+    fin = pd.Timestamp("2026-10-19T12:00:00")
+    lecturas = [{"fint": (fin - pd.Timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%S+0000"), "ta": 20 + h % 5,
+                 "tamax": 21 + h % 5, "tamin": 19 + h % 5, "prec": 1.0 if h in (3, 4) else 0.0,
+                 "vv": 3.0, "vmax": 8.0, "dv": 90, "hr": 70} for h in range(100)]
+    graficos = f.construir_graficos_estacion(lecturas)
+    assert len(graficos) == 4
+    texto = "".join(graficos)
+    assert "Temperatura" in texto and "Lluvia (2,0 mm en 72 h)" in texto and "Viento" in texto and "Humedad relativa" in texto
+    assert f.construir_graficos_estacion([]) == []
+    # Sin humedad ni viento: solo temperatura y lluvia.
+    sin = [{k: v for k, v in lectura.items() if k not in ("vv", "vmax", "dv", "hr")} for lectura in lecturas]
+    assert len(f.construir_graficos_estacion(sin)) == 2
