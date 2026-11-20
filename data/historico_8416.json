@@ -8231,5 +8231,32 @@
 "hrMin": "39",
 "horaHrMin": "14:40",
 "pintMax": "0,0"
+},
+{
+"fecha": "2026-11-15",
+"indicativo": "8416",
+"nombre": "VALÈNCIA",
+"provincia": "VALENCIA",
+"altitud": "13",
+"tmed": "19,4",
+"prec": "0,0",
+"tmin": "16,1",
+"horatmin": "05:40",
+"tmax": "22,8",
+"horatmax": "13:10",
+"dir": "26",
+"velmedia": "3,1",
+"racha": "11,7",
+"horaracha": "02:20",
+"presMax": "1019,1",
+"horaPresMax": "Varias",
+"presMin": "1016,1",
+"horaPresMin": "15",
+"hrMedia": "57",
+"hrMax": "69",
+"horaHrMax": "02:10",
+"hrMin": "48",
+"horaHrMin": "15:20",
+"pintMax": "0,0"
 }
 ]
